@@ -1,0 +1,154 @@
+<?php
+
+namespace Database\Seeders;
+
+use App\Models\Gift;
+use Illuminate\Database\Seeder;
+
+class GiftSeeder extends Seeder
+{
+    /**
+     * Run the database seeds.
+     */
+    public function run(): void
+    {
+        $gifts = [
+            // Bronze (1000 FCFA)
+            [
+                'name' => 'Cœur',
+                'slug' => 'coeur',
+                'description' => 'Un petit cœur pour montrer ton affection',
+                'icon' => '❤️',
+                'animation' => 'heart_float',
+                'price' => 1000,
+                'tier' => Gift::TIER_BRONZE,
+                'sort_order' => 1,
+            ],
+            [
+                'name' => 'Étoile',
+                'slug' => 'etoile',
+                'description' => 'Une étoile brillante',
+                'icon' => '⭐',
+                'animation' => 'star_sparkle',
+                'price' => 1000,
+                'tier' => Gift::TIER_BRONZE,
+                'sort_order' => 2,
+            ],
+            [
+                'name' => 'Rose',
+                'slug' => 'rose',
+                'description' => 'Une rose romantique',
+                'icon' => '🌹',
+                'animation' => 'rose_bloom',
+                'price' => 1000,
+                'tier' => Gift::TIER_BRONZE,
+                'sort_order' => 3,
+            ],
+
+            // Silver (5000 FCFA)
+            [
+                'name' => 'Chocolat',
+                'slug' => 'chocolat',
+                'description' => 'Une boîte de chocolats délicieux',
+                'icon' => '🍫',
+                'animation' => 'chocolate_unwrap',
+                'price' => 5000,
+                'tier' => Gift::TIER_SILVER,
+                'sort_order' => 4,
+            ],
+            [
+                'name' => 'Ours en peluche',
+                'slug' => 'ours-peluche',
+                'description' => 'Un adorable ours en peluche',
+                'icon' => '🧸',
+                'animation' => 'teddy_hug',
+                'price' => 5000,
+                'tier' => Gift::TIER_SILVER,
+                'sort_order' => 5,
+            ],
+            [
+                'name' => 'Parfum',
+                'slug' => 'parfum',
+                'description' => 'Un parfum élégant',
+                'icon' => '🧴',
+                'animation' => 'perfume_spray',
+                'price' => 5000,
+                'tier' => Gift::TIER_SILVER,
+                'sort_order' => 6,
+            ],
+
+            // Gold (25000 FCFA)
+            [
+                'name' => 'Bouquet de fleurs',
+                'slug' => 'bouquet',
+                'description' => 'Un magnifique bouquet de fleurs',
+                'icon' => '💐',
+                'animation' => 'bouquet_bloom',
+                'price' => 25000,
+                'tier' => Gift::TIER_GOLD,
+                'sort_order' => 7,
+            ],
+            [
+                'name' => 'Montre',
+                'slug' => 'montre',
+                'description' => 'Une montre de luxe',
+                'icon' => '⌚',
+                'animation' => 'watch_shine',
+                'price' => 25000,
+                'tier' => Gift::TIER_GOLD,
+                'sort_order' => 8,
+            ],
+            [
+                'name' => 'Champagne',
+                'slug' => 'champagne',
+                'description' => 'Une bouteille de champagne',
+                'icon' => '🍾',
+                'animation' => 'champagne_pop',
+                'price' => 25000,
+                'tier' => Gift::TIER_GOLD,
+                'sort_order' => 9,
+            ],
+
+            // Diamond (50000 FCFA)
+            [
+                'name' => 'Bague diamant',
+                'slug' => 'bague-diamant',
+                'description' => 'Une bague sertie de diamants',
+                'icon' => '💍',
+                'animation' => 'ring_sparkle',
+                'price' => 50000,
+                'tier' => Gift::TIER_DIAMOND,
+                'sort_order' => 10,
+            ],
+            [
+                'name' => 'Couronne',
+                'slug' => 'couronne',
+                'description' => 'Une couronne royale',
+                'icon' => '👑',
+                'animation' => 'crown_glow',
+                'price' => 50000,
+                'tier' => Gift::TIER_DIAMOND,
+                'sort_order' => 11,
+            ],
+            [
+                'name' => 'Yacht',
+                'slug' => 'yacht',
+                'description' => 'Un yacht de luxe virtuel',
+                'icon' => '🛥️',
+                'animation' => 'yacht_sail',
+                'price' => 50000,
+                'tier' => Gift::TIER_DIAMOND,
+                'sort_order' => 12,
+            ],
+        ];
+
+        foreach ($gifts as $gift) {
+            Gift::updateOrCreate(
+                ['slug' => $gift['slug']],
+                $gift
+            );
+        }
+
+        $this->command->info('Gifts seeded successfully!');
+    }
+}
