@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schedule;
 |--------------------------------------------------------------------------
 |
 | Ce fichier définit les commandes Artisan et les tâches planifiées
-| pour MSG Link.
+| pour Weylo.
 |
 */
 

@@ -15,12 +15,12 @@ class AdminSeeder extends Seeder
     {
         // Super Admin principal
         User::updateOrCreate(
-            ['email' => 'admin@msglink.com'],
+            ['email' => 'admin@weylo.com'],
             [
                 'first_name' => 'Super',
                 'last_name' => 'Admin',
                 'username' => 'superadmin',
-                'email' => 'admin@msglink.com',
+                'email' => 'admin@weylo.com',
                 'phone' => '237600000000',
                 'password' => Hash::make('Admin@123!'),
                 'role' => 'superadmin',
@@ -32,12 +32,12 @@ class AdminSeeder extends Seeder
 
         // Admin test
         User::updateOrCreate(
-            ['email' => 'admin2@msglink.com'],
+            ['email' => 'admin2@weylo.com'],
             [
                 'first_name' => 'Admin',
-                'last_name' => 'MSG Link',
+                'last_name' => 'Weylo',
                 'username' => 'admin',
-                'email' => 'admin2@msglink.com',
+                'email' => 'admin2@weylo.com',
                 'phone' => '237600000002',
                 'password' => Hash::make('Admin@123!'),
                 'role' => 'admin',
@@ -49,12 +49,12 @@ class AdminSeeder extends Seeder
 
         // Modérateur test
         User::updateOrCreate(
-            ['email' => 'moderator@msglink.com'],
+            ['email' => 'moderator@weylo.com'],
             [
                 'first_name' => 'Modérateur',
-                'last_name' => 'MSG Link',
+                'last_name' => 'Weylo',
                 'username' => 'moderator',
-                'email' => 'moderator@msglink.com',
+                'email' => 'moderator@weylo.com',
                 'phone' => '237600000001',
                 'password' => Hash::make('Moderator@123!'),
                 'role' => 'moderator',
@@ -65,8 +65,8 @@ class AdminSeeder extends Seeder
         );
 
         $this->command->info('Team accounts seeded!');
-        $this->command->info('Super Admin: admin@msglink.com / Admin@123!');
-        $this->command->info('Admin: admin2@msglink.com / Admin@123!');
-        $this->command->info('Moderator: moderator@msglink.com / Moderator@123!');
+        $this->command->info('Super Admin: admin@weylo.com / Admin@123!');
+        $this->command->info('Admin: admin2@weylo.com / Admin@123!');
+        $this->command->info('Moderator: moderator@weylo.com / Moderator@123!');
     }
 }

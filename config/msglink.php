@@ -4,10 +4,10 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | MSG Link Configuration
+    | Weylo Configuration
     |--------------------------------------------------------------------------
     |
-    | Configuration principale de l'application MSG Link.
+    | Configuration principale de l'application Weylo.
     |
     */
 

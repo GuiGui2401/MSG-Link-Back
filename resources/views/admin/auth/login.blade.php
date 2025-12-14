@@ -9,7 +9,7 @@
         <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
             <i class="fas fa-comment-dots text-3xl text-white"></i>
         </div>
-        <h1 class="text-2xl font-bold text-white">MSG Link Admin</h1>
+        <h1 class="text-2xl font-bold text-white">Weylo Admin</h1>
         <p class="text-primary-100 text-sm mt-1">Connectez-vous pour accéder au dashboard</p>
     </div>
 

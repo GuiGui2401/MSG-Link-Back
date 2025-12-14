@@ -1,6 +1,6 @@
-# MSG Link Backend
+# Weylo Backend
 
-Backend API pour MSG Link - Application de messagerie anonyme avec monétisation.
+Backend API pour Weylo - Application de messagerie anonyme avec monétisation.
 
 ## Fonctionnalités
 

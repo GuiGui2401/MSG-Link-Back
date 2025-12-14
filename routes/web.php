@@ -8,7 +8,7 @@ use App\Http\Controllers\Admin\AdminWebController;
 | Web Routes
 |--------------------------------------------------------------------------
 |
-| MSG Link est principalement une API. Les routes web sont utilisées
+| Weylo est principalement une API. Les routes web sont utilisées
 | pour les redirections et les pages publiques simples.
 |
 */

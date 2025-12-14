@@ -30,9 +30,9 @@ class LigosAppService implements PaymentServiceInterface
 
         $payload = [
             'amount' => (int) $data['amount'],
-            'shop_name' => config('app.name', 'MSG Link'),
+            'shop_name' => config('app.name', 'Weylo'),
             'order_id' => $orderId,
-            'message' => $data['description'] ?? 'Paiement MSG Link',
+            'message' => $data['description'] ?? 'Paiement Weylo',
             'success_url' => $data['success_url'] ?? $this->returnUrl . '?status=success&reference=' . $orderId,
             'failure_url' => $data['failure_url'] ?? $this->returnUrl . '?status=failed&reference=' . $orderId,
         ];

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'Dashboard') - MSG Link Admin</title>
+    <title>@yield('title', 'Dashboard') - Weylo Admin</title>
 
     <!-- Tailwind CSS via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -68,7 +68,7 @@
                     <div class="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
                         <i class="fas fa-comment-dots text-white"></i>
                     </div>
-                    <span class="text-white font-bold text-lg">MSG Link</span>
+                    <span class="text-white font-bold text-lg">Weylo</span>
                 </a>
                 <button @click="sidebarOpen = false" class="lg:hidden text-gray-400 hover:text-white">
                     <i class="fas fa-times"></i>
@@ -265,7 +265,7 @@
             <!-- Footer -->
             <footer class="border-t border-gray-200 bg-white px-6 py-4 flex-shrink-0">
                 <p class="text-sm text-gray-500 text-center">
-                    &copy; {{ date('Y') }} MSG Link. Tous droits réservés.
+                    &copy; {{ date('Y') }} Weylo. Tous droits réservés.
                 </p>
             </footer>
         </div>

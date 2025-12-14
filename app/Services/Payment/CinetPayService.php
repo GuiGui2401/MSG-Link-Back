@@ -38,7 +38,7 @@ class CinetPayService implements PaymentServiceInterface
             'transaction_id' => $transactionId,
             'amount' => $data['amount'],
             'currency' => $data['currency'] ?? 'XAF',
-            'description' => $data['description'] ?? 'Paiement MSG Link',
+            'description' => $data['description'] ?? 'Paiement Weylo',
             'notify_url' => $this->notifyUrl,
             'return_url' => $this->returnUrl,
             'channels' => 'ALL',
