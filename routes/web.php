@@ -45,6 +45,10 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::put('/profile/password', [AdminWebController::class, 'updatePassword'])->name('admin.profile.password');
     Route::delete('/profile/avatar', [AdminWebController::class, 'deleteAvatar'])->name('admin.profile.avatar.delete');
 
+    // Link Generator
+    Route::get('/link-generator', [AdminWebController::class, 'linkGenerator'])->name('admin.link-generator');
+    Route::get('/api/search-users', [AdminWebController::class, 'searchUsers'])->name('admin.api.search-users');
+
     // Cache management
     Route::post('/cache/clear', [AdminWebController::class, 'clearCache'])->name('admin.cache.clear');
     Route::post('/cache/config', [AdminWebController::class, 'clearConfigCache'])->name('admin.cache.config');
@@ -98,6 +102,19 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::delete('/{message}', [AdminWebController::class, 'destroyMessage'])->name('admin.messages.destroy');
     });
 
+    // Stories
+    Route::prefix('stories')->group(function () {
+        Route::get('/', [AdminWebController::class, 'stories'])->name('admin.stories.index');
+        Route::delete('/{story}', [AdminWebController::class, 'destroyStory'])->name('admin.stories.destroy');
+    });
+
+    // Groups
+    Route::prefix('groups')->group(function () {
+        Route::get('/', [AdminWebController::class, 'groups'])->name('admin.groups.index');
+        Route::get('/{group}', [AdminWebController::class, 'showGroup'])->name('admin.groups.show');
+        Route::delete('/{group}', [AdminWebController::class, 'destroyGroup'])->name('admin.groups.destroy');
+    });
+
     // Gifts
     Route::prefix('gifts')->group(function () {
         Route::get('/', [AdminWebController::class, 'gifts'])->name('admin.gifts.index');
@@ -114,10 +131,19 @@ Route::prefix('admin')->middleware('auth')->group(function () {
 });
 
 // Redirection vers le profil utilisateur (pour les liens partagés)
-Route::get('/u/{username}', function ($username) {
-    // Rediriger vers le frontend
-    $frontendUrl = config('msglink.urls.frontend');
-    return redirect("{$frontendUrl}/u/{$username}");
+Route::get('/m/{userId}', function ($userId) {
+    // Vérifier que l'utilisateur existe
+    $user = \App\Models\User::where('id', $userId)
+        ->where('is_banned', false)
+        ->first();
+
+    if (!$user) {
+        abort(404, 'Utilisateur introuvable');
+    }
+
+    // Rediriger vers le frontend React
+    $frontendUrl = env('APP_FRONTEND_URL', 'http://localhost:3000');
+    return redirect("{$frontendUrl}/m/{$userId}");
 })->name('user.profile');
 
 // Page d'installation PWA

@@ -12,6 +12,9 @@ use App\Models\PremiumSubscription;
 use App\Models\Payment;
 use App\Models\Withdrawal;
 use App\Models\Report;
+use App\Models\Story;
+use App\Models\Group;
+use App\Models\GroupMessage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -112,6 +115,20 @@ class AdminWebController extends Controller
             ],
             'reports' => [
                 'pending' => Report::where('status', 'pending')->count(),
+            ],
+            'stories' => [
+                'total' => Story::count(),
+                'active' => Story::where('status', Story::STATUS_ACTIVE)
+                    ->where('expires_at', '>', now())
+                    ->count(),
+                'expired' => Story::where(function($q) {
+                    $q->where('status', Story::STATUS_EXPIRED)
+                        ->orWhere('expires_at', '<=', now());
+                })->count(),
+                'today' => Story::whereDate('created_at', today())->count(),
+                'this_week' => Story::whereBetween('created_at', [now()->startOfWeek(), now()])->count(),
+                'total_views' => Story::sum('views_count'),
+                'average_views' => Story::avg('views_count') ?: 0,
             ],
         ];
 
@@ -915,6 +932,131 @@ class AdminWebController extends Controller
         return back()->with('success', 'Message supprimé.');
     }
 
+    // ==================== STORIES ====================
+
+    public function stories(Request $request)
+    {
+        $query = Story::with('user');
+
+        if ($search = $request->get('search')) {
+            $query->whereHas('user', function ($q) use ($search) {
+                $q->where('username', 'like', "%{$search}%")
+                    ->orWhere('first_name', 'like', "%{$search}%")
+                    ->orWhere('last_name', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status = $request->get('status')) {
+            if ($status === 'active') {
+                $query->where('status', Story::STATUS_ACTIVE)
+                    ->where('expires_at', '>', now());
+            } elseif ($status === 'expired') {
+                $query->where(function($q) {
+                    $q->where('status', Story::STATUS_EXPIRED)
+                        ->orWhere('expires_at', '<=', now());
+                });
+            }
+        }
+
+        if ($type = $request->get('type')) {
+            $query->where('type', $type);
+        }
+
+        $stories = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
+
+        $stats = [
+            'total' => Story::count(),
+            'active' => Story::where('status', Story::STATUS_ACTIVE)
+                ->where('expires_at', '>', now())
+                ->count(),
+            'expired' => Story::where(function($q) {
+                $q->where('status', Story::STATUS_EXPIRED)
+                    ->orWhere('expires_at', '<=', now());
+            })->count(),
+            'today' => Story::whereDate('created_at', today())->count(),
+            'total_views' => Story::sum('views_count'),
+        ];
+
+        return view('admin.stories.index', compact('stories', 'stats'));
+    }
+
+    public function destroyStory(Story $story)
+    {
+        // Supprimer le fichier media du stockage si existe
+        if ($story->media_url) {
+            \Storage::disk('public')->delete($story->media_url);
+        }
+        if ($story->thumbnail_url) {
+            \Storage::disk('public')->delete($story->thumbnail_url);
+        }
+
+        $story->delete();
+        return back()->with('success', 'Story supprimée.');
+    }
+
+    // ==================== GROUPS ====================
+
+    public function groups(Request $request)
+    {
+        $query = Group::with(['creator', 'lastMessage']);
+
+        if ($search = $request->get('search')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('creator', function ($q2) use ($search) {
+                        $q2->where('username', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($request->has('is_public')) {
+            $query->where('is_public', $request->boolean('is_public'));
+        }
+
+        $groups = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
+
+        $stats = [
+            'total' => Group::count(),
+            'public' => Group::where('is_public', true)->count(),
+            'private' => Group::where('is_public', false)->count(),
+            'today' => Group::whereDate('created_at', today())->count(),
+            'this_week' => Group::whereBetween('created_at', [now()->startOfWeek(), now()])->count(),
+            'total_members' => Group::sum('members_count'),
+            'total_messages' => GroupMessage::count(),
+        ];
+
+        return view('admin.groups.index', compact('groups', 'stats'));
+    }
+
+    public function showGroup(Group $group)
+    {
+        $group->load([
+            'creator',
+            'activeMembers.user',
+            'messages' => function ($query) {
+                $query->latest()->limit(50);
+            },
+        ]);
+
+        $stats = [
+            'members' => $group->members_count,
+            'messages' => $group->messages_count,
+            'messages_today' => $group->messages()->whereDate('created_at', today())->count(),
+            'last_activity' => $group->last_message_at,
+        ];
+
+        return view('admin.groups.show', compact('group', 'stats'));
+    }
+
+    public function destroyGroup(Group $group)
+    {
+        $groupName = $group->name;
+        $group->delete();
+        return redirect()->route('admin.groups.index')
+            ->with('success', "Le groupe \"{$groupName}\" a été supprimé.");
+    }
+
     // ==================== GIFTS ====================
 
     public function gifts(Request $request)
@@ -1065,5 +1207,42 @@ class AdminWebController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    // ==================== LINK GENERATOR ====================
+
+    public function linkGenerator()
+    {
+        return view('admin.link-generator');
+    }
+
+    public function searchUsers(Request $request)
+    {
+        $request->validate([
+            'q' => 'required|string|min:2|max:100',
+        ]);
+
+        $users = User::where(function ($query) use ($request) {
+                $search = $request->q;
+                $query->where('username', 'like', "%{$search}%")
+                    ->orWhere('first_name', 'like', "%{$search}%")
+                    ->orWhere('last_name', 'like', "%{$search}%");
+            })
+            ->where('is_banned', false)
+            ->select(['id', 'first_name', 'last_name', 'username', 'avatar'])
+            ->limit(10)
+            ->get();
+
+        return response()->json([
+            'data' => $users->map(function ($user) {
+                return [
+                    'id' => $user->id,
+                    'first_name' => $user->first_name,
+                    'last_name' => $user->last_name,
+                    'username' => $user->username,
+                    'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
+                ];
+            }),
+        ]);
     }
 }

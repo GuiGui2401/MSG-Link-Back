@@ -1,16 +1,19 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\MessageController;
 use App\Http\Controllers\Api\V1\ConfessionController;
 use App\Http\Controllers\Api\V1\ChatController;
+use App\Http\Controllers\Api\V1\GroupController;
 use App\Http\Controllers\Api\V1\GiftController;
 use App\Http\Controllers\Api\V1\PremiumController;
 use App\Http\Controllers\Api\V1\WalletController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\PaymentController;
+use App\Http\Controllers\Api\V1\StoryController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\ModerationController;
@@ -24,20 +27,27 @@ use App\Http\Controllers\Admin\WithdrawalController as AdminWithdrawalController
 
 Route::prefix('v1')->group(function () {
 
+    // ==================== BROADCASTING AUTH ====================
+    Broadcast::routes(['middleware' => ['auth:sanctum']]);
+
     // ==================== AUTH ROUTES (Public) ====================
     Route::prefix('auth')->group(function () {
         Route::post('/register', [AuthController::class, 'register']);
         Route::post('/login', [AuthController::class, 'login']);
         Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
         Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+        Route::post('/register-and-send', [AuthController::class, 'registerAndSend']);
     });
 
     // ==================== PUBLIC USER PROFILE ====================
-    Route::get('/users/{username}', [UserController::class, 'show']);
+    Route::get('/users/by-username/{username}', [UserController::class, 'show']);
+    Route::get('/users/by-id/{id}', [UserController::class, 'showById']);
+    Route::get('/users/{username}', [UserController::class, 'show'])->where('username', '^(?!dashboard|profile|settings|blocked|stats).*$');
 
     // ==================== PUBLIC CONFESSIONS FEED ====================
     Route::get('/confessions', [ConfessionController::class, 'index']);
     Route::get('/confessions/{confession}', [ConfessionController::class, 'show']);
+    Route::get('/confessions/{confession}/comments', [ConfessionController::class, 'getComments']);
 
     // ==================== PUBLIC GIFTS CATALOG ====================
     Route::get('/gifts', [GiftController::class, 'index']);
@@ -76,10 +86,11 @@ Route::prefix('v1')->group(function () {
             Route::post('/avatar', [UserController::class, 'uploadAvatar']);
             Route::delete('/avatar', [UserController::class, 'deleteAvatar']);
             Route::get('/dashboard', [UserController::class, 'dashboard']);
+            Route::get('/stats', [UserController::class, 'getStats']);
             Route::post('/fcm-token', [UserController::class, 'saveFcmToken']);
             Route::delete('/account', [UserController::class, 'deleteAccount']);
             Route::get('/share-link', [UserController::class, 'shareLink']);
-            
+
             // Blocages
             Route::get('/blocked', [UserController::class, 'blockedUsers']);
             Route::post('/{username}/block', [UserController::class, 'block']);
@@ -95,6 +106,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/{message}', [MessageController::class, 'show']);
             Route::post('/send/{username}', [MessageController::class, 'send']);
             Route::post('/{message}/reveal', [MessageController::class, 'reveal']);
+            Route::post('/{message}/start-conversation', [MessageController::class, 'startConversation']);
             Route::post('/{message}/report', [MessageController::class, 'report']);
             Route::delete('/{message}', [MessageController::class, 'destroy']);
         });
@@ -109,6 +121,8 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{confession}/like', [ConfessionController::class, 'unlike']);
             Route::post('/{confession}/reveal', [ConfessionController::class, 'reveal']);
             Route::post('/{confession}/report', [ConfessionController::class, 'report']);
+            Route::post('/{confession}/comments', [ConfessionController::class, 'addComment']);
+            Route::delete('/{confession}/comments/{comment}', [ConfessionController::class, 'deleteComment']);
             Route::delete('/{confession}', [ConfessionController::class, 'destroy']);
         });
 
@@ -127,6 +141,25 @@ Route::prefix('v1')->group(function () {
             Route::post('/presence', [ChatController::class, 'updatePresence']);
         });
 
+        // ==================== GROUPS ====================
+        Route::prefix('groups')->group(function () {
+            Route::get('/', [GroupController::class, 'index']);
+            Route::post('/', [GroupController::class, 'store']);
+            Route::post('/join', [GroupController::class, 'join']);
+            Route::get('/stats', [GroupController::class, 'stats']);
+            Route::get('/{group}', [GroupController::class, 'show']);
+            Route::put('/{group}', [GroupController::class, 'update']);
+            Route::delete('/{group}', [GroupController::class, 'destroy']);
+            Route::post('/{group}/leave', [GroupController::class, 'leave']);
+            Route::get('/{group}/messages', [GroupController::class, 'messages']);
+            Route::post('/{group}/messages', [GroupController::class, 'sendMessage']);
+            Route::post('/{group}/read', [GroupController::class, 'markAsRead']);
+            Route::get('/{group}/members', [GroupController::class, 'members']);
+            Route::delete('/{group}/members/{member}', [GroupController::class, 'removeMember']);
+            Route::put('/{group}/members/{member}/role', [GroupController::class, 'updateMemberRole']);
+            Route::post('/{group}/regenerate-invite', [GroupController::class, 'regenerateInviteCode']);
+        });
+
         // ==================== CADEAUX ====================
         Route::prefix('gifts')->group(function () {
             Route::get('/received', [GiftController::class, 'received']);
@@ -141,6 +174,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/subscriptions/active', [PremiumController::class, 'active']);
             Route::post('/subscribe/message/{message}', [PremiumController::class, 'subscribeToMessage']);
             Route::post('/subscribe/conversation/{conversation}', [PremiumController::class, 'subscribeToConversation']);
+            Route::post('/subscribe/story/{story}', [PremiumController::class, 'subscribeToStory']);
             Route::post('/cancel/{subscription}', [PremiumController::class, 'cancel']);
             Route::get('/check', [PremiumController::class, 'check']);
         });
@@ -164,6 +198,20 @@ Route::prefix('v1')->group(function () {
             Route::post('/read-all', [NotificationController::class, 'markAllAsRead']);
             Route::delete('/{notification}', [NotificationController::class, 'destroy']);
             Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+        });
+
+        // ==================== STORIES ====================
+        Route::prefix('stories')->group(function () {
+            Route::get('/', [StoryController::class, 'index']);
+            Route::get('/my-stories', [StoryController::class, 'myStories']);
+            Route::get('/stats', [StoryController::class, 'stats']);
+            Route::post('/', [StoryController::class, 'store']);
+            Route::get('/user/{username}', [StoryController::class, 'userStories']);
+            Route::get('/user-by-id/{userId}', [StoryController::class, 'userStoriesById']);
+            Route::get('/{story}', [StoryController::class, 'show']);
+            Route::post('/{story}/view', [StoryController::class, 'markAsViewed']);
+            Route::get('/{story}/viewers', [StoryController::class, 'viewers']);
+            Route::delete('/{story}', [StoryController::class, 'destroy']);
         });
 
         // ==================== PAYMENTS ====================

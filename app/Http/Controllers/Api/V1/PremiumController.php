@@ -8,6 +8,7 @@ use App\Models\PremiumSubscription;
 use App\Models\AnonymousMessage;
 use App\Models\Conversation;
 use App\Models\Payment;
+use App\Models\Story;
 use App\Services\Payment\PaymentServiceInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -268,12 +269,82 @@ class PremiumController extends Controller
     }
 
     /**
+     * S'abonner pour révéler l'identité d'une story
+     */
+    public function subscribeToStory(Request $request, Story $story): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifications
+        if ($story->user_id === $user->id) {
+            return response()->json([
+                'message' => 'Vous ne pouvez pas vous abonner à votre propre story.',
+            ], 422);
+        }
+
+        if (!$story->is_active) {
+            return response()->json([
+                'message' => 'Cette story n\'est plus disponible.',
+            ], 422);
+        }
+
+        // Vérifier si un abonnement actif existe déjà
+        if (PremiumSubscription::hasActiveForStory($user->id, $story->id)) {
+            return response()->json([
+                'message' => 'Vous avez déjà un abonnement actif pour cette story.',
+            ], 422);
+        }
+
+        // Créer l'abonnement en attente
+        $subscription = PremiumSubscription::create([
+            'subscriber_id' => $user->id,
+            'target_user_id' => $story->user_id,
+            'type' => PremiumSubscription::TYPE_STORY,
+            'story_id' => $story->id,
+            'amount' => PremiumSubscription::MONTHLY_PRICE,
+            'status' => PremiumSubscription::STATUS_PENDING,
+        ]);
+
+        // Initier le paiement
+        try {
+            $paymentResult = $this->paymentService->initiatePayment([
+                'amount' => PremiumSubscription::MONTHLY_PRICE,
+                'currency' => 'XAF',
+                'description' => 'Abonnement Premium - Révélation identité story',
+                'reference' => "PREM-{$subscription->id}",
+                'user' => $user,
+                'metadata' => [
+                    'type' => 'subscription',
+                    'subscription_id' => $subscription->id,
+                    'subscription_type' => 'story',
+                ],
+            ]);
+
+            $subscription->update(['payment_reference' => $paymentResult['reference']]);
+
+            return response()->json([
+                'message' => 'Paiement initié.',
+                'subscription_id' => $subscription->id,
+                'price' => PremiumSubscription::MONTHLY_PRICE,
+                'payment' => $paymentResult,
+            ]);
+        } catch (\Exception $e) {
+            $subscription->delete();
+
+            return response()->json([
+                'message' => 'Erreur lors de l\'initiation du paiement.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Vérifier si l'utilisateur a un premium actif pour un type/id donné
      */
     public function check(Request $request): JsonResponse
     {
         $request->validate([
-            'type' => 'required|in:message,conversation',
+            'type' => 'required|in:message,conversation,story',
             'id' => 'required|integer',
         ]);
 
@@ -284,6 +355,7 @@ class PremiumController extends Controller
         $hasActive = match ($type) {
             'message' => PremiumSubscription::hasActiveForMessage($user->id, $id),
             'conversation' => PremiumSubscription::hasActiveForConversation($user->id, $id),
+            'story' => PremiumSubscription::hasActiveForStory($user->id, $id),
         };
 
         $subscription = null;
@@ -292,6 +364,7 @@ class PremiumController extends Controller
             $subscription = match ($type) {
                 'message' => $query->where('message_id', $id)->first(),
                 'conversation' => $query->where('conversation_id', $id)->first(),
+                'story' => $query->where('story_id', $id)->first(),
             };
         }
 

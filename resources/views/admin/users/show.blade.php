@@ -78,6 +78,15 @@
                             <i class="fas fa-check-circle text-green-500 ml-2" title="Téléphone vérifié"></i>
                         @endif
                     </div>
+                    @if($user->original_pin)
+                    <div class="flex items-center text-gray-600">
+                        <i class="fas fa-key w-5 mr-3 text-gray-400"></i>
+                        <span class="text-sm font-mono">PIN: {{ $user->original_pin }}</span>
+                        <button onclick="navigator.clipboard.writeText('{{ $user->original_pin }}')" class="ml-2 text-primary-500 hover:text-primary-700" title="Copier le PIN">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    @endif
                     <div class="flex items-center text-gray-600">
                         <i class="fas fa-calendar w-5 mr-3 text-gray-400"></i>
                         <span class="text-sm">Inscrit le {{ $user->created_at->format('d/m/Y à H:i') }}</span>

@@ -12,6 +12,7 @@ use App\Models\PremiumSubscription;
 use App\Models\Payment;
 use App\Models\Withdrawal;
 use App\Models\Report;
+use App\Models\Story;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +82,17 @@ class DashboardController extends Controller
                 ->count(),
         ];
 
+        // Stories
+        $storiesStats = [
+            'total' => Story::count(),
+            'active' => Story::active()->count(),
+            'expired' => Story::expired()->count(),
+            'today' => Story::whereDate('created_at', today())->count(),
+            'this_week' => Story::whereBetween('created_at', [now()->startOfWeek(), now()])->count(),
+            'total_views' => Story::sum('views_count'),
+            'average_views' => Story::avg('views_count'),
+        ];
+
         return response()->json([
             'users' => $usersStats,
             'messages' => $messagesStats,
@@ -89,6 +101,7 @@ class DashboardController extends Controller
             'revenue' => $revenueStats,
             'withdrawals' => $withdrawalsStats,
             'reports' => $reportsStats,
+            'stories' => $storiesStats,
             'generated_at' => now()->toIso8601String(),
         ]);
     }
@@ -159,16 +172,37 @@ class DashboardController extends Controller
             ->groupBy('gifts.tier')
             ->get();
 
+        // Stories par jour
+        $storiesPerDay = Story::select(
+            DB::raw('DATE(created_at) as date'),
+            DB::raw('COUNT(*) as count'),
+            DB::raw('SUM(views_count) as total_views')
+        )
+            ->where('created_at', '>=', $startDate)
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get();
+
+        // Top utilisateurs par stories
+        $topUsersByStories = User::select('users.id', 'first_name', 'last_name', 'username')
+            ->withCount('stories')
+            ->withSum('stories', 'views_count')
+            ->orderBy('stories_count', 'desc')
+            ->limit(10)
+            ->get();
+
         return response()->json([
             'period' => $days,
             'charts' => [
                 'user_registrations' => $userRegistrations,
                 'messages_per_day' => $messagesPerDay,
                 'revenue_per_day' => $revenuePerDay,
+                'stories_per_day' => $storiesPerDay,
             ],
             'rankings' => [
                 'top_by_messages' => $topUsersByMessages,
                 'top_by_gifts' => $topUsersByGifts,
+                'top_by_stories' => $topUsersByStories,
             ],
             'distributions' => [
                 'gifts_by_tier' => $giftsByTier,

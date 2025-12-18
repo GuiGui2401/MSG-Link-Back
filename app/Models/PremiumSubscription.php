@@ -16,6 +16,7 @@ class PremiumSubscription extends Model
         'type',
         'conversation_id',
         'message_id',
+        'story_id',
         'amount',
         'status',
         'payment_reference',
@@ -41,6 +42,7 @@ class PremiumSubscription extends Model
      */
     const TYPE_CONVERSATION = 'conversation';
     const TYPE_MESSAGE = 'message';
+    const TYPE_STORY = 'story';
 
     /**
      * Statuts
@@ -82,6 +84,14 @@ class PremiumSubscription extends Model
     public function message(): BelongsTo
     {
         return $this->belongsTo(AnonymousMessage::class, 'message_id');
+    }
+
+    /**
+     * Story associée (si type = story)
+     */
+    public function story(): BelongsTo
+    {
+        return $this->belongsTo(Story::class, 'story_id');
     }
 
     // ==================== ACCESSORS ====================
@@ -241,5 +251,24 @@ class PremiumSubscription extends Model
             ->where('message_id', $messageId)
             ->active()
             ->exists();
+    }
+
+    /**
+     * Vérifier si un abonnement actif existe pour une story
+     */
+    public static function hasActiveForStory(int $subscriberId, int $storyId): bool
+    {
+        return self::where('subscriber_id', $subscriberId)
+            ->where('story_id', $storyId)
+            ->active()
+            ->exists();
+    }
+
+    /**
+     * Vérifier si un utilisateur a payé pour voir les viewers d'une story
+     */
+    public static function hasActiveForStoryViewers(int $subscriberId, int $storyId): bool
+    {
+        return self::hasActiveForStory($subscriberId, $storyId);
     }
 }

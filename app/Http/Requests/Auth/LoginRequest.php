@@ -14,16 +14,16 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'login' => 'required|string', // Email ou téléphone
-            'password' => 'required|string',
+            'login' => 'required|string', // Username, email ou téléphone
+            'password' => 'required|string', // PIN ou mot de passe
         ];
     }
 
     public function messages(): array
     {
         return [
-            'login.required' => 'L\'email ou le numéro de téléphone est obligatoire.',
-            'password.required' => 'Le mot de passe est obligatoire.',
+            'login.required' => 'Le nom d\'utilisateur, email ou numéro de téléphone est obligatoire.',
+            'password.required' => 'Le mot de passe ou PIN est obligatoire.',
         ];
     }
 }

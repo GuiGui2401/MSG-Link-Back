@@ -7,6 +7,7 @@ use App\Http\Requests\Confession\CreateConfessionRequest;
 use App\Http\Requests\Confession\ReportConfessionRequest;
 use App\Http\Resources\ConfessionResource;
 use App\Models\Confession;
+use App\Models\ConfessionComment;
 use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
@@ -25,7 +26,7 @@ class ConfessionController extends Controller
     {
         $confessions = Confession::publicApproved()
             ->with('author:id,first_name')
-            ->withCount('likedBy')
+            ->withCount(['likedBy', 'comments'])
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));
 
@@ -33,6 +34,12 @@ class ConfessionController extends Controller
         if ($request->user()) {
             $confessions->getCollection()->transform(function ($confession) use ($request) {
                 $confession->is_liked = $confession->isLikedBy($request->user());
+                return $confession;
+            });
+        } else {
+            // Si pas connecté, is_liked = false
+            $confessions->getCollection()->transform(function ($confession) {
+                $confession->is_liked = false;
                 return $confession;
             });
         }
@@ -324,6 +331,148 @@ class ConfessionController extends Controller
             'pending_count' => Confession::where('author_id', $user->id)
                 ->pending()
                 ->count(),
+        ]);
+    }
+
+    /**
+     * Récupérer les commentaires d'une confession
+     */
+    public function getComments(Request $request, Confession $confession): JsonResponse
+    {
+        // Vérifier l'accès à la confession
+        if ($confession->is_private) {
+            $user = $request->user();
+            if ($confession->recipient_id !== $user?->id && $confession->author_id !== $user?->id) {
+                return response()->json([
+                    'message' => 'Accès non autorisé.',
+                ], 403);
+            }
+        } else {
+            // Confession publique : doit être approuvée
+            if ($confession->status !== Confession::STATUS_APPROVED) {
+                return response()->json([
+                    'message' => 'Confession non disponible.',
+                ], 404);
+            }
+        }
+
+        $currentUserId = $request->user()?->id;
+
+        $comments = $confession->comments()
+            ->with('author:id,first_name,username,avatar')
+            ->orderBy('created_at', 'asc')
+            ->get()
+            ->map(function ($comment) use ($currentUserId) {
+                return [
+                    'id' => $comment->id,
+                    'content' => $comment->getDecryptedAttribute('content') ?? $comment->content,
+                    'is_anonymous' => $comment->is_anonymous,
+                    'author' => $comment->is_anonymous ? [
+                        'name' => 'Anonyme',
+                        'initial' => '?',
+                        'avatar_url' => null,
+                    ] : [
+                        'id' => $comment->author->id,
+                        'name' => $comment->author->first_name,
+                        'username' => $comment->author->username,
+                        'initial' => $comment->author->initial,
+                        'avatar_url' => $comment->author->avatar_url,
+                    ],
+                    'created_at' => $comment->created_at,
+                    'is_mine' => $comment->author_id === $currentUserId,
+                ];
+            });
+
+        return response()->json([
+            'comments' => $comments,
+            'total' => $comments->count(),
+        ]);
+    }
+
+    /**
+     * Ajouter un commentaire
+     */
+    public function addComment(Request $request, Confession $confession): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifier l'accès à la confession
+        if ($confession->is_private) {
+            if ($confession->recipient_id !== $user->id && $confession->author_id !== $user->id) {
+                return response()->json([
+                    'message' => 'Accès non autorisé.',
+                ], 403);
+            }
+        } else {
+            // Confession publique : doit être approuvée
+            if ($confession->status !== Confession::STATUS_APPROVED) {
+                return response()->json([
+                    'message' => 'Confession non disponible.',
+                ], 404);
+            }
+        }
+
+        $validated = $request->validate([
+            'content' => 'required|string|max:1000',
+            'is_anonymous' => 'boolean',
+        ]);
+
+        $comment = $confession->comments()->create([
+            'author_id' => $user->id,
+            'content' => $validated['content'],
+            'is_anonymous' => $validated['is_anonymous'] ?? false,
+        ]);
+
+        $comment->load('author:id,first_name,username,avatar');
+
+        return response()->json([
+            'message' => 'Commentaire ajouté avec succès.',
+            'comment' => [
+                'id' => $comment->id,
+                'content' => $comment->getDecryptedAttribute('content') ?? $comment->content,
+                'is_anonymous' => $comment->is_anonymous,
+                'author' => $comment->is_anonymous ? [
+                    'name' => 'Anonyme',
+                    'initial' => '?',
+                    'avatar_url' => null,
+                ] : [
+                    'id' => $comment->author->id,
+                    'name' => $comment->author->first_name,
+                    'username' => $comment->author->username,
+                    'initial' => $comment->author->initial,
+                    'avatar_url' => $comment->author->avatar_url,
+                ],
+                'created_at' => $comment->created_at,
+                'is_mine' => true,
+            ],
+        ], 201);
+    }
+
+    /**
+     * Supprimer un commentaire
+     */
+    public function deleteComment(Request $request, Confession $confession, ConfessionComment $comment): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifier que le commentaire appartient bien à cette confession
+        if ($comment->confession_id !== $confession->id) {
+            return response()->json([
+                'message' => 'Commentaire non trouvé.',
+            ], 404);
+        }
+
+        // Seul l'auteur du commentaire peut le supprimer
+        if ($comment->author_id !== $user->id) {
+            return response()->json([
+                'message' => 'Accès non autorisé.',
+            ], 403);
+        }
+
+        $comment->delete();
+
+        return response()->json([
+            'message' => 'Commentaire supprimé avec succès.',
         ]);
     }
 }

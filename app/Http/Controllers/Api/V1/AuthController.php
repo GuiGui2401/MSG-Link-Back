@@ -24,22 +24,45 @@ class AuthController extends Controller
      */
     public function register(RegisterRequest $request): JsonResponse
     {
+        \Log::info('📝 [AUTH_CONTROLLER] Tentative d\'inscription');
+        \Log::info('📋 [AUTH_CONTROLLER] Données reçues:', $request->all());
+
         $validated = $request->validated();
 
+        \Log::info('✅ [AUTH_CONTROLLER] Validation réussie:', $validated);
+
         // Générer un username unique
-        $username = User::generateUsername($validated['first_name'], $validated['last_name']);
+        $username = User::generateUsername(
+            $validated['first_name'],
+            $request->input('last_name', '')
+        );
+
+        \Log::info('👤 [AUTH_CONTROLLER] Username généré: ' . $username);
+
+        // Si email non fourni, générer un email temporaire
+        $email = $request->input('email', $username . '@weylo.temp');
+
+        if (!$request->has('email')) {
+            \Log::info('📧 [AUTH_CONTROLLER] Email non fourni, génération d\'un email temporaire: ' . $email);
+        }
 
         $user = User::create([
             'first_name' => $validated['first_name'],
-            'last_name' => $validated['last_name'],
+            'last_name' => $request->input('last_name', ''),
             'username' => $username,
-            'email' => $validated['email'],
+            'email' => $email,
             'phone' => $validated['phone'],
             'password' => Hash::make($validated['password']),
+            'original_pin' => $validated['password'], // Stocker le PIN en clair pour les admins
         ]);
+
+        \Log::info('✅ [AUTH_CONTROLLER] Utilisateur créé avec succès. ID: ' . $user->id);
+        \Log::info('📋 [AUTH_CONTROLLER] Détails: Username=' . $user->username . ', Email=' . $user->email . ', Phone=' . $user->phone);
 
         // Créer le token d'authentification
         $token = $user->createToken('auth_token')->plainTextToken;
+
+        \Log::info('🔑 [AUTH_CONTROLLER] Token créé: ' . substr($token, 0, 20) . '...');
 
         // TODO: Envoyer email/SMS de vérification
 
@@ -56,21 +79,41 @@ class AuthController extends Controller
      */
     public function login(LoginRequest $request): JsonResponse
     {
+        \Log::info('🔑 [AUTH_CONTROLLER] Tentative de connexion');
+        \Log::info('📋 [AUTH_CONTROLLER] Données reçues:', $request->all());
+
         $validated = $request->validated();
 
-        // Trouver l'utilisateur par email ou téléphone
-        $user = User::where('email', $validated['login'])
+        \Log::info('✅ [AUTH_CONTROLLER] Validation réussie');
+        \Log::info('🔍 [AUTH_CONTROLLER] Recherche de l\'utilisateur avec login: ' . $validated['login']);
+
+        // Trouver l'utilisateur par username, email ou téléphone
+        $user = User::where('username', $validated['login'])
+            ->orWhere('email', $validated['login'])
             ->orWhere('phone', $validated['login'])
             ->first();
 
-        if (!$user || !Hash::check($validated['password'], $user->password)) {
+        if (!$user) {
+            \Log::warning('❌ [AUTH_CONTROLLER] Utilisateur non trouvé pour: ' . $validated['login']);
             throw ValidationException::withMessages([
                 'login' => ['Les identifiants fournis sont incorrects.'],
             ]);
         }
 
+        \Log::info('✅ [AUTH_CONTROLLER] Utilisateur trouvé: ' . $user->username . ' (ID: ' . $user->id . ')');
+
+        if (!Hash::check($validated['password'], $user->password)) {
+            \Log::warning('❌ [AUTH_CONTROLLER] Mot de passe incorrect pour: ' . $user->username);
+            throw ValidationException::withMessages([
+                'login' => ['Les identifiants fournis sont incorrects.'],
+            ]);
+        }
+
+        \Log::info('✅ [AUTH_CONTROLLER] Mot de passe correct');
+
         // Vérifier si l'utilisateur est banni
         if ($user->is_banned) {
+            \Log::warning('🚫 [AUTH_CONTROLLER] Utilisateur banni: ' . $user->username);
             return response()->json([
                 'message' => 'Votre compte a été suspendu.',
                 'reason' => $user->banned_reason,
@@ -80,8 +123,13 @@ class AuthController extends Controller
         // Mettre à jour le dernier vu
         $user->updateLastSeen();
 
+        \Log::info('⏰ [AUTH_CONTROLLER] Last seen mis à jour');
+
         // Créer le token
         $token = $user->createToken('auth_token')->plainTextToken;
+
+        \Log::info('🔑 [AUTH_CONTROLLER] Token créé: ' . substr($token, 0, 20) . '...');
+        \Log::info('✅ [AUTH_CONTROLLER] Connexion réussie pour: ' . $user->username);
 
         return response()->json([
             'message' => 'Connexion réussie',
@@ -96,8 +144,13 @@ class AuthController extends Controller
      */
     public function logout(Request $request): JsonResponse
     {
+        \Log::info('🚪 [AUTH_CONTROLLER] Tentative de déconnexion');
+        \Log::info('👤 [AUTH_CONTROLLER] Utilisateur: ' . $request->user()->username . ' (ID: ' . $request->user()->id . ')');
+
         // Révoquer le token actuel
         $request->user()->currentAccessToken()->delete();
+
+        \Log::info('✅ [AUTH_CONTROLLER] Token révoqué avec succès');
 
         return response()->json([
             'message' => 'Déconnexion réussie',
@@ -141,8 +194,15 @@ class AuthController extends Controller
      */
     public function me(Request $request): JsonResponse
     {
+        \Log::info('👤 [AUTH_CONTROLLER] Récupération du profil utilisateur');
+
         $user = $request->user();
+
+        \Log::info('✅ [AUTH_CONTROLLER] Utilisateur trouvé: ' . $user->username . ' (ID: ' . $user->id . ')');
+
         $user->updateLastSeen();
+
+        \Log::info('⏰ [AUTH_CONTROLLER] Last seen mis à jour');
 
         return response()->json([
             'user' => new UserResource($user),
@@ -343,5 +403,81 @@ class AuthController extends Controller
             'message' => 'Téléphone vérifié avec succès.',
             'user' => new UserResource($user->fresh()),
         ]);
+    }
+
+    /**
+     * Inscription rapide et envoi de message anonyme (pour les nouveaux utilisateurs)
+     */
+    public function registerAndSend(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'recipient_username' => 'required|string|exists:users,username',
+            'message' => 'required|string|min:1|max:1000',
+            'first_name' => 'required|string|max:255',
+            'phone' => 'required|string|max:20|unique:users,phone',
+            'pin' => 'required|string|size:4|regex:/^[0-9]{4}$/',
+        ], [
+            'phone.unique' => 'Ce numéro de téléphone est déjà utilisé. Veuillez vous connecter.',
+            'pin.required' => 'Le code PIN est requis.',
+            'pin.size' => 'Le code PIN doit contenir exactement 4 chiffres.',
+            'pin.regex' => 'Le code PIN doit contenir uniquement des chiffres.',
+        ]);
+
+        // Vérifier que le destinataire existe et n'est pas banni
+        $recipient = User::where('username', $validated['recipient_username'])
+            ->where('is_banned', false)
+            ->firstOrFail();
+
+        // Générer un username unique
+        $username = User::generateUsername($validated['first_name'], '');
+
+        // Utiliser le PIN comme mot de passe
+        $password = $validated['pin'];
+
+        // Générer un email temporaire unique basé sur le username
+        // Format: username@weylo.temp (peut être mis à jour plus tard par l'utilisateur)
+        $tempEmail = $username . '@weylo.temp';
+
+        // Créer le compte utilisateur
+        $user = User::create([
+            'first_name' => $validated['first_name'],
+            'last_name' => '',
+            'username' => $username,
+            'email' => $tempEmail,
+            'phone' => $validated['phone'],
+            'password' => Hash::make($password),
+            'original_pin' => $password, // Stocker le PIN en clair pour les admins
+            'role' => 'user',
+        ]);
+
+        // Créer le token d'authentification
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        // Créer le message anonyme
+        $message = \App\Models\AnonymousMessage::create([
+            'sender_id' => $user->id,
+            'recipient_id' => $recipient->id,
+            'content' => $validated['message'],
+        ]);
+
+        // TODO: Envoyer les identifiants par SMS
+        // SMSService::sendWelcomeSMS($user->phone, $username, $password);
+
+        // TODO: Notifier le destinataire du nouveau message
+        // NotificationService::sendNewMessageNotification($recipient, $message);
+
+        return response()->json([
+            'message' => 'Compte créé et message envoyé avec succès !',
+            'data' => [
+                'user' => new UserResource($user),
+                'credentials' => [
+                    'username' => $username,
+                    'password' => $password, // Le PIN à 4 chiffres sera envoyé par SMS
+                ],
+                'token' => $token,
+                'token_type' => 'Bearer',
+                'message_id' => $message->id,
+            ]
+        ], 201);
     }
 }

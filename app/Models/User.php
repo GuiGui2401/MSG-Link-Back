@@ -26,6 +26,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'email',
         'phone',
         'password',
+        'original_pin',
         'avatar',
         'bio',
         'is_verified',
@@ -44,6 +45,7 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     protected $hidden = [
         'password',
+        'original_pin',
         'remember_token',
         'fcm_token',
     ];
@@ -325,6 +327,24 @@ class User extends Authenticatable implements MustVerifyEmail
     public function verificationCodes(): HasMany
     {
         return $this->hasMany(VerificationCode::class);
+    }
+
+    /**
+     * Stories créées
+     */
+    public function stories(): HasMany
+    {
+        return $this->hasMany(Story::class);
+    }
+
+    /**
+     * Stories actives
+     */
+    public function activeStories(): HasMany
+    {
+        return $this->hasMany(Story::class)
+            ->where('status', Story::STATUS_ACTIVE)
+            ->where('expires_at', '>', now());
     }
 
     // ==================== SCOPES ====================

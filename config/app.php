@@ -56,6 +56,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend Application URL
+    |--------------------------------------------------------------------------
+    |
+    | This URL is used to generate links to the frontend application
+    | (e.g., invite links, email links, etc.). Set this in your ".env" file.
+    |
+    */
+
+    'frontend_url' => env('APP_FRONTEND_URL', 'http://localhost:5173'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

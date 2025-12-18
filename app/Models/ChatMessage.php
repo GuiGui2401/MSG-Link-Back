@@ -68,6 +68,49 @@ class ChatMessage extends Model
     // ==================== ACCESSORS ====================
 
     /**
+     * Accessor pour le contenu (déchiffré automatiquement)
+     */
+    public function getContentAttribute($value): ?string
+    {
+        // Si pas de valeur, retourner null
+        if (empty($value)) {
+            return null;
+        }
+
+        // Si c'est un message système ou cadeau, pas de chiffrement
+        if ($this->type === self::TYPE_SYSTEM || $this->type === self::TYPE_GIFT) {
+            return $value;
+        }
+
+        // Forcer le déchiffrement pour les messages texte
+        return $this->getDecryptedAttribute('content');
+    }
+
+    /**
+     * Aperçu du contenu du message (déchiffré et tronqué)
+     */
+    public function getContentPreviewAttribute(): string
+    {
+        if ($this->type === self::TYPE_GIFT) {
+            return '🎁 Cadeau envoyé';
+        }
+
+        if ($this->type === self::TYPE_SYSTEM) {
+            // Le contenu système n'est pas chiffré
+            return $this->attributes['content'] ?? '';
+        }
+
+        // Pour les messages texte, forcer le déchiffrement directement
+        $content = $this->getDecryptedAttribute('content') ?? '';
+
+        if (strlen($content) > 50) {
+            return substr($content, 0, 47) . '...';
+        }
+
+        return $content;
+    }
+
+    /**
      * Le message est-il un cadeau ?
      */
     public function getIsGiftAttribute(): bool

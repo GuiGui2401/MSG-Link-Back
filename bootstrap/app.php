@@ -13,8 +13,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->api(prepend: [
-            \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+        // Note: EnsureFrontendRequestsAreStateful middleware removed
+        // API uses Bearer token authentication, not session-based auth with CSRF
+        // If you need stateful authentication for a SPA, uncomment the line below:
+        // $middleware->api(prepend: [
+        //     \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+        // ]);
+
+        // Log all API requests
+        $middleware->api(append: [
+            \App\Http\Middleware\LogApiRequests::class,
         ]);
 
         $middleware->alias([

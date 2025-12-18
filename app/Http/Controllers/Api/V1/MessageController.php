@@ -118,11 +118,28 @@ class MessageController extends Controller
             ], 422);
         }
 
+        // Vérifier le message original si c'est une réponse
+        $validated = $request->validated();
+        if (!empty($validated['reply_to_message_id'])) {
+            $originalMessage = AnonymousMessage::find($validated['reply_to_message_id']);
+
+            // Vérifier que le message original existe et que l'utilisateur actuel est le destinataire
+            if (!$originalMessage || $originalMessage->recipient_id !== $sender->id) {
+                return response()->json([
+                    'message' => 'Vous ne pouvez répondre qu\'aux messages que vous avez reçus.',
+                ], 422);
+            }
+
+            // Le destinataire de la réponse est l'expéditeur du message original
+            $recipient = User::find($originalMessage->sender_id);
+        }
+
         // Créer le message
         $message = AnonymousMessage::create([
             'sender_id' => $sender->id,
             'recipient_id' => $recipient->id,
-            'content' => $request->validated()['content'],
+            'content' => $validated['content'],
+            'reply_to_message_id' => $validated['reply_to_message_id'] ?? null,
         ]);
 
         // Déclencher l'événement
@@ -263,5 +280,47 @@ class MessageController extends Controller
         return response()->json([
             'message' => 'Tous les messages ont été marqués comme lus.',
         ]);
+    }
+
+    /**
+     * Démarrer une conversation à partir d'un message anonyme
+     */
+    public function startConversation(Request $request, AnonymousMessage $message): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifier que c'est bien le destinataire du message
+        if ($message->recipient_id !== $user->id) {
+            return response()->json([
+                'message' => 'Accès non autorisé.',
+            ], 403);
+        }
+
+        // Obtenir l'expéditeur du message
+        $sender = User::findOrFail($message->sender_id);
+
+        // Vérifier les blocages
+        if ($user->isBlockedBy($sender) || $user->hasBlocked($sender)) {
+            return response()->json([
+                'message' => 'Impossible de démarrer une conversation avec cet utilisateur.',
+            ], 422);
+        }
+
+        // Créer ou obtenir la conversation
+        $conversation = $user->getOrCreateConversationWith($sender);
+
+        // Charger les relations nécessaires
+        $conversation->load([
+            'participantOne:id,first_name,last_name,username,avatar,last_seen_at',
+            'participantTwo:id,first_name,last_name,username,avatar,last_seen_at',
+        ]);
+
+        $conversation->other_participant = $conversation->getOtherParticipant($user);
+        $conversation->unread_count = $conversation->unreadCountFor($user);
+
+        return response()->json([
+            'message' => 'Conversation créée avec succès.',
+            'conversation' => new \App\Http\Resources\ConversationResource($conversation),
+        ], 201);
     }
 }

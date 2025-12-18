@@ -62,6 +62,20 @@ class UserController extends Controller
     }
 
     /**
+     * Profil public d'un utilisateur par ID
+     */
+    public function showById(int $id): JsonResponse
+    {
+        $user = User::where('id', $id)
+            ->active()
+            ->firstOrFail();
+
+        return response()->json([
+            'user' => new UserPublicResource($user),
+        ]);
+    }
+
+    /**
      * Mettre à jour le profil
      */
     public function updateProfile(UpdateProfileRequest $request): JsonResponse
@@ -173,37 +187,58 @@ class UserController extends Controller
      */
     public function dashboard(Request $request): JsonResponse
     {
-        $user = $request->user();
+        try {
+            $user = $request->user();
 
-        return response()->json([
-            'user' => new UserResource($user),
-            'stats' => [
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Utilisateur non authentifié',
+                ], 401);
+            }
+
+            // Récupérer les stats avec gestion d'erreurs pour chaque relation
+            $stats = [
                 'messages' => [
-                    'received' => $user->receivedMessages()->count(),
-                    'sent' => $user->sentMessages()->count(),
-                    'unread' => $user->receivedMessages()->unread()->count(),
+                    'received' => $user->receivedMessages()->count() ?? 0,
+                    'sent' => $user->sentMessages()->count() ?? 0,
+                    'unread' => $user->receivedMessages()->where('is_read', false)->count() ?? 0,
                 ],
                 'confessions' => [
-                    'received' => $user->confessionsReceived()->count(),
-                    'sent' => $user->confessionsWritten()->count(),
+                    'received' => $user->confessionsReceived()->count() ?? 0,
+                    'sent' => $user->confessionsWritten()->count() ?? 0,
                 ],
                 'conversations' => [
-                    'total' => $user->conversations()->count(),
+                    'total' => $user->conversations()->count() ?? 0,
                     'active' => $user->conversations()
                         ->where('last_message_at', '>=', now()->subDays(7))
-                        ->count(),
+                        ->count() ?? 0,
                 ],
                 'gifts' => [
-                    'received' => $user->giftsReceived()->completed()->count(),
-                    'sent' => $user->giftsSent()->completed()->count(),
+                    'received' => $user->giftsReceived()->where('status', 'completed')->count() ?? 0,
+                    'sent' => $user->giftsSent()->where('status', 'completed')->count() ?? 0,
                 ],
                 'wallet' => [
-                    'balance' => $user->wallet_balance,
-                    'formatted' => $user->formatted_balance,
+                    'balance' => $user->wallet_balance ?? 0,
+                    'formatted' => $user->formatted_balance ?? '0 FCFA',
                 ],
-            ],
-            'share_link' => $user->profile_url,
-        ]);
+            ];
+
+            return response()->json([
+                'user' => new UserResource($user),
+                'stats' => $stats,
+                'share_link' => $user->profile_url,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Dashboard error: ' . $e->getMessage(), [
+                'user_id' => $request->user()->id ?? null,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Erreur lors de la récupération du dashboard',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
+        }
     }
 
     /**
@@ -341,5 +376,62 @@ class UserController extends Controller
                 'twitter' => "https://twitter.com/intent/tweet?text=" . urlencode("Écris-moi un message anonyme 👇 " . $user->profile_url),
             ],
         ]);
+    }
+
+    /**
+     * Récupérer uniquement les statistiques de l'utilisateur
+     */
+    public function getStats(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Utilisateur non authentifié',
+                ], 401);
+            }
+
+            // Récupérer les stats avec gestion d'erreurs pour chaque relation
+            $stats = [
+                'messages' => [
+                    'received' => $user->receivedMessages()->count() ?? 0,
+                    'sent' => $user->sentMessages()->count() ?? 0,
+                    'unread' => $user->receivedMessages()->where('is_read', false)->count() ?? 0,
+                ],
+                'confessions' => [
+                    'received' => $user->confessionsReceived()->count() ?? 0,
+                    'sent' => $user->confessionsWritten()->count() ?? 0,
+                ],
+                'conversations' => [
+                    'total' => $user->conversations()->count() ?? 0,
+                    'active' => $user->conversations()
+                        ->where('last_message_at', '>=', now()->subDays(7))
+                        ->count() ?? 0,
+                ],
+                'gifts' => [
+                    'received' => $user->giftsReceived()->where('status', 'completed')->count() ?? 0,
+                    'sent' => $user->giftsSent()->where('status', 'completed')->count() ?? 0,
+                ],
+                'wallet' => [
+                    'balance' => $user->wallet_balance ?? 0,
+                    'formatted' => $user->formatted_balance ?? '0 FCFA',
+                ],
+            ];
+
+            return response()->json([
+                'stats' => $stats,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Stats error: ' . $e->getMessage(), [
+                'user_id' => $request->user()->id ?? null,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Erreur lors de la récupération des statistiques',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
+        }
     }
 }

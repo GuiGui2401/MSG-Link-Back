@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\Encryptable;
 use App\Traits\Reportable;
@@ -88,6 +89,14 @@ class Confession extends Model
     {
         return $this->belongsToMany(User::class, 'confession_likes')
             ->withTimestamps();
+    }
+
+    /**
+     * Commentaires de la confession
+     */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(ConfessionComment::class);
     }
 
     // ==================== ACCESSORS ====================

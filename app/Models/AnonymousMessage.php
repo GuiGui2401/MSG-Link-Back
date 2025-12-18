@@ -17,6 +17,7 @@ class AnonymousMessage extends Model
         'sender_id',
         'recipient_id',
         'content',
+        'reply_to_message_id',
         'is_read',
         'read_at',
         'is_identity_revealed',
@@ -60,6 +61,22 @@ class AnonymousMessage extends Model
     public function revealedViaSubscription(): BelongsTo
     {
         return $this->belongsTo(PremiumSubscription::class, 'revealed_via_subscription_id');
+    }
+
+    /**
+     * Message auquel celui-ci répond
+     */
+    public function replyToMessage(): BelongsTo
+    {
+        return $this->belongsTo(AnonymousMessage::class, 'reply_to_message_id');
+    }
+
+    /**
+     * Réponses à ce message
+     */
+    public function replies()
+    {
+        return $this->hasMany(AnonymousMessage::class, 'reply_to_message_id');
     }
 
     // ==================== ACCESSORS ====================

@@ -107,7 +107,37 @@
 </div>
 
 <!-- Quick Stats -->
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+    <!-- Stories Stats -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+            <i class="fas fa-images text-indigo-500 mr-2"></i>
+            Stories
+        </h3>
+        <div class="space-y-4">
+            <div class="flex items-center justify-between">
+                <span class="text-gray-600">Total</span>
+                <span class="font-semibold">{{ number_format($stats['stories']['total'] ?? 0) }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-gray-600">Actives</span>
+                <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">{{ $stats['stories']['active'] ?? 0 }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-gray-600">Expirées</span>
+                <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-medium">{{ $stats['stories']['expired'] ?? 0 }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-gray-600">Vues moyennes</span>
+                <span class="font-semibold text-indigo-600">{{ number_format($stats['stories']['average_views'] ?? 0, 1) }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-gray-600">Aujourd'hui</span>
+                <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">{{ $stats['stories']['today'] ?? 0 }}</span>
+            </div>
+        </div>
+    </div>
+
     <!-- Confessions Stats -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <h3 class="text-lg font-semibold text-gray-800 mb-4">

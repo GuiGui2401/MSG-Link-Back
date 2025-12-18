@@ -33,8 +33,9 @@ class ConfessionResource extends JsonResource
             ),
             
             // Stats pour confessions publiques
-            'likes_count' => $this->when($this->is_public, $this->likes_count ?? 0),
+            'likes_count' => $this->when($this->is_public, $this->liked_by_count ?? $this->likes_count ?? 0),
             'views_count' => $this->when($this->is_public, $this->views_count ?? 0),
+            'comments_count' => $this->when($this->is_public, $this->comments_count ?? 0),
             'is_liked' => $this->when(isset($this->is_liked), $this->is_liked),
             
             // Modération (admin seulement)

@@ -120,6 +120,18 @@
                         Messages
                     </a>
 
+                    <a href="{{ route('admin.stories.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.stories.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-images w-5 mr-3"></i>
+                        Stories
+                    </a>
+
+                    <a href="{{ route('admin.groups.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.groups.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-users-between-lines w-5 mr-3"></i>
+                        Groupes
+                    </a>
+
                     <a href="{{ route('admin.gifts.index') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.gifts.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
                         <i class="fas fa-gift w-5 mr-3"></i>
@@ -142,6 +154,12 @@
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.revenue') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
                         <i class="fas fa-coins w-5 mr-3"></i>
                         Revenus
+                    </a>
+
+                    <a href="{{ route('admin.link-generator') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.link-generator') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-link w-5 mr-3"></i>
+                        Générateur de liens
                     </a>
                 </div>
 

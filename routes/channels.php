@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Conversation;
+use App\Models\Group;
 use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
 
@@ -44,4 +45,17 @@ Broadcast::channel('presence.online', function (User $user) {
         'username' => $user->username,
         'initial' => $user->initial,
     ];
+});
+
+/**
+ * Canal privé pour un groupe
+ */
+Broadcast::channel('group.{groupId}', function (User $user, int $groupId) {
+    $group = Group::find($groupId);
+
+    if (!$group) {
+        return false;
+    }
+
+    return $group->hasMember($user);
 });
