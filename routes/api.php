@@ -34,8 +34,8 @@ Route::prefix('v1')->group(function () {
     Route::prefix('auth')->group(function () {
         Route::post('/register', [AuthController::class, 'register']);
         Route::post('/login', [AuthController::class, 'login']);
-        Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
-        Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+        Route::post('/verify-identity', [AuthController::class, 'verifyIdentity']);
+        Route::post('/reset-password-by-phone', [AuthController::class, 'resetPasswordByPhone']);
         Route::post('/register-and-send', [AuthController::class, 'registerAndSend']);
     });
 
@@ -52,6 +52,8 @@ Route::prefix('v1')->group(function () {
     // ==================== PUBLIC GIFTS CATALOG ====================
     Route::get('/gifts', [GiftController::class, 'index']);
     Route::get('/gifts/{gift}', [GiftController::class, 'show']);
+    Route::get('/gift-categories', [GiftController::class, 'getCategories']);
+    Route::get('/gift-categories/{categoryId}/gifts', [GiftController::class, 'getGiftsByCategory']);
 
     // ==================== PREMIUM PRICING ====================
     Route::get('/premium/pricing', [PremiumController::class, 'pricing']);
@@ -185,6 +187,12 @@ Route::prefix('v1')->group(function () {
             Route::get('/transactions', [WalletController::class, 'transactions']);
             Route::get('/stats', [WalletController::class, 'stats']);
             Route::get('/withdrawal-methods', [WalletController::class, 'withdrawalMethods']);
+
+            // Dépôts
+            Route::post('/deposit', [WalletController::class, 'deposit']);
+            Route::get('/deposit/status/{reference}', [WalletController::class, 'checkDepositStatus']);
+
+            // Retraits
             Route::post('/withdraw', [WalletController::class, 'withdraw']);
             Route::get('/withdrawals', [WalletController::class, 'withdrawals']);
             Route::get('/withdrawals/{withdrawal}', [WalletController::class, 'showWithdrawal']);

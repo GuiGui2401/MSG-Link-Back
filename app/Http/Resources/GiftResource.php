@@ -20,8 +20,13 @@ class GiftResource extends JsonResource
             'formatted_price' => $this->formatted_price,
             'tier' => $this->tier,
             'tier_color' => $this->tier_color,
+            'background_color' => $this->background_color,
             'is_active' => $this->is_active,
             'sort_order' => $this->sort_order,
+            'category' => $this->when($this->relationLoaded('category'), function () {
+                return new GiftCategoryResource($this->category);
+            }),
+            'category_id' => $this->gift_category_id,
         ];
     }
 }

@@ -15,6 +15,7 @@ class SendChatMessageRequest extends FormRequest
     {
         return [
             'content' => 'required|string|min:1|max:1000',
+            'reply_to_id' => 'nullable|exists:anonymous_messages,id',
         ];
     }
 

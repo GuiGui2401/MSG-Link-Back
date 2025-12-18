@@ -186,8 +186,8 @@ class ConfessionController extends Controller
             $confessionData['recipient_id'] = $recipient->id;
             $confessionData['status'] = Confession::STATUS_APPROVED; // Privées = auto-approuvées
         } else {
-            // Confessions publiques nécessitent modération
-            $confessionData['status'] = Confession::STATUS_PENDING;
+            // Confessions publiques = auto-approuvées
+            $confessionData['status'] = Confession::STATUS_APPROVED;
         }
 
         $confession = Confession::create($confessionData);
@@ -198,8 +198,8 @@ class ConfessionController extends Controller
         }
 
         return response()->json([
-            'message' => $confession->is_public 
-                ? 'Confession soumise. Elle sera publiée après modération.'
+            'message' => $confession->is_public
+                ? 'Confession publique publiée avec succès.'
                 : 'Confession envoyée avec succès.',
             'confession' => new ConfessionResource($confession),
         ], 201);

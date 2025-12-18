@@ -221,6 +221,8 @@ class UserController extends Controller
                     'balance' => $user->wallet_balance ?? 0,
                     'formatted' => $user->formatted_balance ?? '0 FCFA',
                 ],
+                // Somme de tous les streaks actifs (toutes les conversations)
+                'streak_days' => $user->conversations()->sum('streak_count') ?? 0,
             ];
 
             return response()->json([
@@ -417,6 +419,8 @@ class UserController extends Controller
                     'balance' => $user->wallet_balance ?? 0,
                     'formatted' => $user->formatted_balance ?? '0 FCFA',
                 ],
+                // Somme de tous les streaks actifs (toutes les conversations)
+                'streak_days' => $user->conversations()->sum('streak_count') ?? 0,
             ];
 
             return response()->json([

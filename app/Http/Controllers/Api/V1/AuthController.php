@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
-use App\Http\Requests\Auth\ForgotPasswordRequest;
-use App\Http\Requests\Auth\ResetPasswordRequest;
+use App\Http\Requests\Auth\VerifyIdentityRequest;
+use App\Http\Requests\Auth\ResetPasswordByPhoneRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Models\VerificationCode;
@@ -210,87 +210,108 @@ class AuthController extends Controller
     }
 
     /**
-     * Mot de passe oublié
+     * Vérifier l'identité de l'utilisateur (prénom + téléphone)
      */
-    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
+    public function verifyIdentity(VerifyIdentityRequest $request): JsonResponse
     {
+        \Log::info('🔍 [AUTH_CONTROLLER] Vérification d\'identité');
+        \Log::info('📋 [AUTH_CONTROLLER] Données reçues:', $request->all());
+
         $validated = $request->validated();
 
-        $user = User::where('email', $validated['email'])->first();
+        // Rechercher l'utilisateur par prénom et téléphone
+        $user = User::where('first_name', $validated['first_name'])
+            ->where('phone', $validated['phone'])
+            ->first();
 
         if (!$user) {
-            // Pour des raisons de sécurité, on renvoie toujours un succès
+            \Log::warning('❌ [AUTH_CONTROLLER] Utilisateur non trouvé avec first_name=' . $validated['first_name'] . ' et phone=' . $validated['phone']);
+
             return response()->json([
-                'message' => 'Si cet email existe, vous recevrez un lien de réinitialisation.',
-            ]);
+                'success' => false,
+                'message' => 'Aucun compte trouvé avec ce prénom et ce numéro de téléphone.',
+            ], 404);
         }
 
-        // Générer un code de vérification
-        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        // Vérifier si l'utilisateur est banni
+        if ($user->is_banned) {
+            \Log::warning('🚫 [AUTH_CONTROLLER] Utilisateur banni: ' . $user->username);
 
-        VerificationCode::create([
-            'user_id' => $user->id,
-            'type' => 'password_reset',
-            'code' => Hash::make($code),
-            'target' => $validated['email'],
-            'expires_at' => now()->addMinutes(30),
-        ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Ce compte a été suspendu.',
+                'reason' => $user->banned_reason,
+            ], 403);
+        }
 
-        // TODO: Envoyer le code par email
+        \Log::info('✅ [AUTH_CONTROLLER] Utilisateur trouvé: ' . $user->username . ' (ID: ' . $user->id . ')');
 
         return response()->json([
-            'message' => 'Si cet email existe, vous recevrez un code de réinitialisation.',
+            'success' => true,
+            'message' => 'Utilisateur trouvé. Vous pouvez maintenant réinitialiser votre mot de passe.',
+            'data' => [
+                'username' => $user->username,
+            ]
         ]);
     }
 
     /**
-     * Réinitialiser le mot de passe
+     * Réinitialiser le mot de passe avec prénom + téléphone + nouveau PIN
      */
-    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    public function resetPasswordByPhone(ResetPasswordByPhoneRequest $request): JsonResponse
     {
+        \Log::info('🔄 [AUTH_CONTROLLER] Réinitialisation de mot de passe par téléphone');
+        \Log::info('📋 [AUTH_CONTROLLER] Données reçues:', [
+            'first_name' => $request->first_name,
+            'phone' => $request->phone,
+            'new_pin' => '****' // Ne pas logger le PIN
+        ]);
+
         $validated = $request->validated();
 
-        $user = User::where('email', $validated['email'])->first();
-
-        if (!$user) {
-            throw ValidationException::withMessages([
-                'email' => ['Utilisateur non trouvé.'],
-            ]);
-        }
-
-        // Vérifier le code
-        $verificationCode = VerificationCode::where('user_id', $user->id)
-            ->where('type', 'password_reset')
-            ->where('target', $validated['email'])
-            ->whereNull('verified_at')
-            ->where('expires_at', '>', now())
-            ->orderBy('created_at', 'desc')
+        // Rechercher l'utilisateur par prénom et téléphone
+        $user = User::where('first_name', $validated['first_name'])
+            ->where('phone', $validated['phone'])
             ->first();
 
-        if (!$verificationCode || !Hash::check($validated['code'], $verificationCode->code)) {
-            // Incrémenter les tentatives
-            if ($verificationCode) {
-                $verificationCode->increment('attempts');
-            }
+        if (!$user) {
+            \Log::warning('❌ [AUTH_CONTROLLER] Utilisateur non trouvé avec first_name=' . $validated['first_name'] . ' et phone=' . $validated['phone']);
 
             throw ValidationException::withMessages([
-                'code' => ['Code de vérification invalide ou expiré.'],
+                'phone' => ['Aucun compte trouvé avec ce prénom et ce numéro de téléphone.'],
             ]);
         }
 
-        // Marquer le code comme utilisé
-        $verificationCode->update(['verified_at' => now()]);
+        // Vérifier si l'utilisateur est banni
+        if ($user->is_banned) {
+            \Log::warning('🚫 [AUTH_CONTROLLER] Utilisateur banni: ' . $user->username);
+
+            return response()->json([
+                'message' => 'Ce compte a été suspendu.',
+                'reason' => $user->banned_reason,
+            ], 403);
+        }
+
+        \Log::info('✅ [AUTH_CONTROLLER] Utilisateur trouvé: ' . $user->username . ' (ID: ' . $user->id . ')');
 
         // Mettre à jour le mot de passe
         $user->update([
-            'password' => Hash::make($validated['password']),
+            'password' => Hash::make($validated['new_pin']),
+            'original_pin' => $validated['new_pin'], // Stocker le PIN en clair pour les admins
         ]);
 
-        // Révoquer tous les tokens existants
+        \Log::info('✅ [AUTH_CONTROLLER] Mot de passe mis à jour avec succès pour: ' . $user->username);
+
+        // Révoquer tous les tokens existants pour forcer une nouvelle connexion
         $user->tokens()->delete();
 
+        \Log::info('🔑 [AUTH_CONTROLLER] Tous les tokens révoqués');
+
         return response()->json([
-            'message' => 'Mot de passe réinitialisé avec succès.',
+            'message' => 'Votre mot de passe a été réinitialisé avec succès. Vous pouvez maintenant vous connecter avec votre nouveau code PIN.',
+            'data' => [
+                'username' => $user->username,
+            ]
         ]);
     }
 

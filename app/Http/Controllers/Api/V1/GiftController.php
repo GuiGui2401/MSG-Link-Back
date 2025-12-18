@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Gift\SendGiftRequest;
 use App\Http\Resources\GiftResource;
 use App\Http\Resources\GiftTransactionResource;
+use App\Http\Resources\GiftCategoryResource;
 use App\Models\Gift;
+use App\Models\GiftCategory;
 use App\Models\GiftTransaction;
 use App\Models\Conversation;
 use App\Models\ChatMessage;
@@ -365,6 +367,39 @@ class GiftController extends Controller
                     ->whereHas('gift', fn($q) => $q->where('tier', Gift::TIER_DIAMOND))
                     ->count(),
             ],
+        ]);
+    }
+
+    /**
+     * Liste toutes les catégories de cadeaux actives
+     */
+    public function getCategories(): JsonResponse
+    {
+        $categories = GiftCategory::where('is_active', true)
+            ->withCount('gifts')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'categories' => GiftCategoryResource::collection($categories),
+        ]);
+    }
+
+    /**
+     * Récupère les cadeaux d'une catégorie spécifique
+     */
+    public function getGiftsByCategory($categoryId): JsonResponse
+    {
+        $category = GiftCategory::where('is_active', true)->findOrFail($categoryId);
+
+        $gifts = Gift::where('is_active', true)
+            ->where('gift_category_id', $categoryId)
+            ->orderBy('price')
+            ->get();
+
+        return response()->json([
+            'category' => new GiftCategoryResource($category),
+            'gifts' => GiftResource::collection($gifts),
         ]);
     }
 }

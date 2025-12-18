@@ -133,9 +133,21 @@
                     </a>
 
                     <a href="{{ route('admin.gifts.index') }}"
-                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.gifts.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.gifts.index') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
                         <i class="fas fa-gift w-5 mr-3"></i>
-                        Cadeaux
+                        Transactions Cadeaux
+                    </a>
+
+                    <a href="{{ route('admin.gift-categories.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.gift-categories.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-folder w-5 mr-3"></i>
+                        Catégories Cadeaux
+                    </a>
+
+                    <a href="{{ route('admin.gift-management.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.gift-management.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-gifts w-5 mr-3"></i>
+                        Gestion Cadeaux
                     </a>
 
                     <a href="{{ route('admin.payments.index') }}"
@@ -179,6 +191,12 @@
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.settings') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
                         <i class="fas fa-cog w-5 mr-3"></i>
                         Configuration
+                    </a>
+
+                    <a href="{{ route('admin.service-config.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.service-config.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-plug w-5 mr-3"></i>
+                        Services API
                     </a>
                 </div>
             </nav>

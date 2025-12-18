@@ -41,7 +41,16 @@ class ChatMessageResource extends JsonResource
                     'amount' => $this->giftTransaction?->amount,
                 ];
             }),
-            
+
+            // Si c'est une réponse à un message anonyme
+            'anonymous_message' => $this->when($this->relationLoaded('anonymousMessage') && $this->anonymousMessage, function () {
+                return [
+                    'id' => $this->anonymousMessage->id,
+                    'content' => $this->anonymousMessage->content,
+                    'created_at' => $this->anonymousMessage->created_at->toIso8601String(),
+                ];
+            }),
+
             'is_read' => $this->is_read,
             'read_at' => $this->read_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),

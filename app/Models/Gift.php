@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Gift extends Model
 {
@@ -20,6 +21,8 @@ class Gift extends Model
         'tier',
         'sort_order',
         'is_active',
+        'gift_category_id',
+        'background_color',
     ];
 
     protected $casts = [
@@ -54,6 +57,14 @@ class Gift extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(GiftTransaction::class);
+    }
+
+    /**
+     * Catégorie du cadeau
+     */
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(GiftCategory::class, 'gift_category_id');
     }
 
     // ==================== ACCESSORS ====================

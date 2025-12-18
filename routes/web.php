@@ -53,6 +53,27 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::post('/cache/clear', [AdminWebController::class, 'clearCache'])->name('admin.cache.clear');
     Route::post('/cache/config', [AdminWebController::class, 'clearConfigCache'])->name('admin.cache.config');
 
+    // Service Configuration (WhatsApp, SMS, Payment)
+    Route::prefix('service-config')->name('admin.service-config.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'index'])->name('index');
+        Route::put('/whatsapp', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'updateWhatsApp'])->name('update-whatsapp');
+        Route::put('/nexah', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'updateNexah'])->name('update-nexah');
+        Route::put('/freemopay', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'updateFreeMoPay'])->name('update-freemopay');
+        Route::put('/preferences', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'updateNotificationPreferences'])->name('update-preferences');
+
+        // Test endpoints
+        Route::post('/test/whatsapp', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'testWhatsApp'])->name('test-whatsapp');
+        Route::post('/test/nexah', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'testNexah'])->name('test-nexah');
+        Route::post('/test/freemopay', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'testFreeMoPay'])->name('test-freemopay');
+
+        // Send test messages
+        Route::post('/send-test/whatsapp', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'sendTestWhatsApp'])->name('send-test-whatsapp');
+        Route::post('/send-test/nexah', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'sendTestNexah'])->name('send-test-nexah');
+
+        // Clear cache
+        Route::post('/clear-cache', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'clearCache'])->name('clear-cache');
+    });
+
     // Team Management (admins & moderators)
     Route::prefix('team')->group(function () {
         Route::get('/', [AdminWebController::class, 'team'])->name('admin.team.index');
@@ -119,6 +140,29 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::prefix('gifts')->group(function () {
         Route::get('/', [AdminWebController::class, 'gifts'])->name('admin.gifts.index');
     });
+
+    // Gift Categories Management
+    Route::resource('gift-categories', \App\Http\Controllers\Admin\GiftCategoryController::class)
+        ->names([
+            'index' => 'admin.gift-categories.index',
+            'create' => 'admin.gift-categories.create',
+            'store' => 'admin.gift-categories.store',
+            'edit' => 'admin.gift-categories.edit',
+            'update' => 'admin.gift-categories.update',
+            'destroy' => 'admin.gift-categories.destroy',
+        ]);
+
+    // Gift Management
+    Route::resource('gift-management', \App\Http\Controllers\Admin\GiftManagementController::class)
+        ->parameters(['gift-management' => 'gift'])
+        ->names([
+            'index' => 'admin.gift-management.index',
+            'create' => 'admin.gift-management.create',
+            'store' => 'admin.gift-management.store',
+            'edit' => 'admin.gift-management.edit',
+            'update' => 'admin.gift-management.update',
+            'destroy' => 'admin.gift-management.destroy',
+        ]);
 
     // Withdrawals
     Route::prefix('withdrawals')->group(function () {

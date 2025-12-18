@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Notification extends Model
 {
@@ -22,6 +23,8 @@ class Notification extends Model
         'data',
         'is_read',
         'read_at',
+        'notifiable_type',
+        'notifiable_id',
     ];
 
     protected $casts = [
@@ -35,6 +38,14 @@ class Notification extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the notifiable entity that the notification belongs to (polymorphic)
+     */
+    public function notifiable(): MorphTo
+    {
+        return $this->morphTo();
     }
 
     // ==================== SCOPES ====================
@@ -56,13 +67,37 @@ class Notification extends Model
 
     // ==================== MÉTHODES ====================
 
+    /**
+     * Check if the notification has been read.
+     */
+    public function isRead(): bool
+    {
+        return $this->read_at !== null || $this->is_read === true;
+    }
+
+    /**
+     * Mark the notification as read.
+     */
     public function markAsRead(): void
     {
-        if (!$this->is_read) {
-            $this->update([
+        if (!$this->isRead()) {
+            $this->forceFill([
                 'is_read' => true,
                 'read_at' => now(),
-            ]);
+            ])->save();
+        }
+    }
+
+    /**
+     * Mark the notification as unread.
+     */
+    public function markAsUnread(): void
+    {
+        if ($this->isRead()) {
+            $this->forceFill([
+                'is_read' => false,
+                'read_at' => null,
+            ])->save();
         }
     }
 }

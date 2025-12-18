@@ -37,6 +37,7 @@ class Payment extends Model
     const TYPE_SUBSCRIPTION = 'subscription';
     const TYPE_GIFT = 'gift';
     const TYPE_WITHDRAWAL = 'withdrawal';
+    const TYPE_DEPOSIT = 'deposit';
 
     /**
      * Providers

@@ -8,11 +8,18 @@ use App\Http\Resources\WalletTransactionResource;
 use App\Http\Resources\WithdrawalResource;
 use App\Models\Withdrawal;
 use App\Models\WalletTransaction;
+use App\Models\Payment;
+use App\Services\Payment\CinetPayService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class WalletController extends Controller
 {
+    public function __construct(
+        private CinetPayService $cinetPayService
+    ) {}
+
     /**
      * Obtenir le solde et les informations du wallet
      */
@@ -122,6 +129,176 @@ class WalletController extends Controller
             'message' => 'Demande de retrait créée avec succès.',
             'withdrawal' => new WithdrawalResource($withdrawal),
         ], 201);
+    }
+
+    /**
+     * Initier un dépôt vers le wallet
+     */
+    public function deposit(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        // Validation
+        $validator = Validator::make($request->all(), [
+            'amount' => ['required', 'integer', 'min:100', 'max:10000000'],
+            'provider' => ['nullable', 'string', 'in:cinetpay,ligosapp'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation échouée.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $amount = $request->amount;
+        $provider = $request->provider ?? 'cinetpay';
+
+        // Vérifier que le montant est un multiple de 5
+        if ($amount % 5 !== 0) {
+            return response()->json([
+                'message' => 'Le montant doit être un multiple de 5 FCFA.',
+            ], 422);
+        }
+
+        try {
+            // Créer un enregistrement Payment en pending
+            $payment = Payment::create([
+                'user_id' => $user->id,
+                'type' => Payment::TYPE_DEPOSIT,
+                'provider' => $provider,
+                'amount' => $amount,
+                'currency' => 'XAF',
+                'status' => Payment::STATUS_PENDING,
+                'metadata' => [
+                    'purpose' => 'wallet_deposit',
+                ],
+            ]);
+
+            // Générer une référence unique avec préfixe DEPOSIT-
+            $reference = 'DEPOSIT-' . $payment->id;
+            $payment->update(['reference' => $reference]);
+
+            // Initier le paiement via CinetPay
+            $paymentResult = $this->cinetPayService->initiatePayment([
+                'reference' => $reference,
+                'amount' => $amount,
+                'currency' => 'XAF',
+                'description' => "Recharge de wallet - {$amount} FCFA",
+                'user' => $user,
+                'metadata' => [
+                    'payment_id' => $payment->id,
+                    'user_id' => $user->id,
+                    'type' => 'deposit',
+                ],
+            ]);
+
+            if (!$paymentResult['success']) {
+                $payment->markAsFailed('Échec de l\'initiation du paiement');
+                return response()->json([
+                    'message' => 'Impossible d\'initier le paiement.',
+                ], 500);
+            }
+
+            return response()->json([
+                'message' => 'Paiement initié avec succès.',
+                'payment' => [
+                    'id' => $payment->id,
+                    'reference' => $payment->reference,
+                    'amount' => $payment->amount,
+                    'currency' => $payment->currency,
+                    'status' => $payment->status,
+                ],
+                'payment_url' => $paymentResult['payment_url'],
+                'payment_token' => $paymentResult['payment_token'] ?? null,
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erreur lors de l\'initiation du dépôt.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Vérifier le statut d'un dépôt
+     */
+    public function checkDepositStatus(Request $request, string $reference): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifier que la référence commence par DEPOSIT-
+        if (!str_starts_with($reference, 'DEPOSIT-')) {
+            return response()->json([
+                'message' => 'Référence invalide.',
+            ], 400);
+        }
+
+        // Récupérer le paiement
+        $payment = Payment::where('reference', $reference)
+            ->where('user_id', $user->id)
+            ->where('type', Payment::TYPE_DEPOSIT)
+            ->first();
+
+        if (!$payment) {
+            return response()->json([
+                'message' => 'Paiement introuvable.',
+            ], 404);
+        }
+
+        try {
+            // Vérifier le statut auprès de CinetPay
+            $statusResult = $this->cinetPayService->checkPaymentStatus($reference);
+
+            // Mettre à jour le statut du paiement si nécessaire
+            if ($statusResult['status'] === 'completed' && $payment->status !== Payment::STATUS_COMPLETED) {
+                // Le paiement est confirmé, créditer le wallet
+                $this->processDepositPayment($payment);
+            } elseif ($statusResult['status'] === 'failed' && $payment->status !== Payment::STATUS_FAILED) {
+                $payment->markAsFailed('Paiement refusé par CinetPay');
+            }
+
+            // Recharger le paiement
+            $payment->refresh();
+
+            return response()->json([
+                'payment' => [
+                    'id' => $payment->id,
+                    'reference' => $payment->reference,
+                    'amount' => $payment->amount,
+                    'currency' => $payment->currency,
+                    'status' => $payment->status,
+                    'completed_at' => $payment->completed_at,
+                ],
+                'wallet_balance' => $user->fresh()->wallet_balance,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erreur lors de la vérification du statut.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Traiter un paiement de dépôt confirmé
+     */
+    private function processDepositPayment(Payment $payment): void
+    {
+        if ($payment->status === Payment::STATUS_COMPLETED) {
+            return; // Déjà traité
+        }
+
+        // Marquer le paiement comme complété
+        $payment->markAsCompleted();
+
+        // Créditer le wallet de l'utilisateur
+        $user = $payment->user;
+        $user->creditWallet(
+            $payment->amount,
+            "Dépôt sur le wallet - {$payment->reference}",
+            $payment
+        );
     }
 
     /**

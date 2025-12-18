@@ -137,6 +137,7 @@ class ChatController extends Controller
             ->with([
                 'sender:id,first_name,last_name,username,avatar',
                 'giftTransaction.gift',
+                'anonymousMessage:id,content,created_at',
             ])
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 50));
@@ -180,13 +181,17 @@ class ChatController extends Controller
             'sender_id' => $user->id,
             'content' => $request->validated()['content'],
             'type' => ChatMessage::TYPE_TEXT,
+            'anonymous_message_id' => $request->validated()['reply_to_id'] ?? null,
         ]);
 
         // Mettre à jour la conversation
         $conversation->updateAfterMessage();
 
         // Charger les relations
-        $message->load('sender:id,first_name,last_name,username,avatar');
+        $message->load([
+            'sender:id,first_name,last_name,username,avatar',
+            'anonymousMessage:id,content,created_at'
+        ]);
 
         // Diffuser l'événement en temps réel
         broadcast(new ChatMessageSent($message))->toOthers();

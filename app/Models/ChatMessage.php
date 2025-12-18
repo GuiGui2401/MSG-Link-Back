@@ -18,6 +18,7 @@ class ChatMessage extends Model
         'content',
         'type',
         'gift_transaction_id',
+        'anonymous_message_id',
         'is_read',
         'read_at',
     ];
@@ -63,6 +64,14 @@ class ChatMessage extends Model
     public function giftTransaction(): BelongsTo
     {
         return $this->belongsTo(GiftTransaction::class);
+    }
+
+    /**
+     * Message anonyme auquel ce message répond (si applicable)
+     */
+    public function anonymousMessage(): BelongsTo
+    {
+        return $this->belongsTo(AnonymousMessage::class);
     }
 
     // ==================== ACCESSORS ====================

@@ -61,7 +61,9 @@ class PaymentController extends Controller
             $status = $result['status'];
 
             // Traiter selon le type de transaction
-            if (str_starts_with($reference, 'GIFT-')) {
+            if (str_starts_with($reference, 'DEPOSIT-')) {
+                $this->processDepositPayment($reference, $status, Payment::PROVIDER_CINETPAY);
+            } elseif (str_starts_with($reference, 'GIFT-')) {
                 $this->processGiftPayment($reference, $status, Payment::PROVIDER_CINETPAY);
             } elseif (str_starts_with($reference, 'PREM-')) {
                 $this->processPremiumPayment($reference, $status, Payment::PROVIDER_CINETPAY);
@@ -96,7 +98,9 @@ class PaymentController extends Controller
             $status = $result['status'];
 
             // Traiter selon le type de transaction (même logique que CinetPay)
-            if (str_starts_with($reference, 'GIFT-')) {
+            if (str_starts_with($reference, 'DEPOSIT-')) {
+                $this->processDepositPayment($reference, $status, Payment::PROVIDER_LIGOSAPP);
+            } elseif (str_starts_with($reference, 'GIFT-')) {
                 $this->processGiftPayment($reference, $status, Payment::PROVIDER_LIGOSAPP);
             } elseif (str_starts_with($reference, 'PREM-')) {
                 $this->processPremiumPayment($reference, $status, Payment::PROVIDER_LIGOSAPP);
@@ -208,6 +212,58 @@ class PaymentController extends Controller
             } else {
                 $subscription->delete();
                 Log::info('Premium payment failed, subscription deleted', ['subscription_id' => $subscription->id]);
+            }
+        });
+    }
+
+    /**
+     * Traiter un paiement de dépôt wallet
+     */
+    private function processDepositPayment(string $reference, string $status, string $provider = Payment::PROVIDER_CINETPAY): void
+    {
+        // Récupérer le paiement par référence
+        $payment = Payment::where('reference', $reference)
+            ->where('type', Payment::TYPE_DEPOSIT)
+            ->first();
+
+        if (!$payment) {
+            Log::warning('Deposit payment not found', ['reference' => $reference]);
+            return;
+        }
+
+        if ($payment->status === Payment::STATUS_COMPLETED) {
+            Log::info('Deposit payment already processed', ['reference' => $reference]);
+            return;
+        }
+
+        DB::transaction(function () use ($payment, $status, $provider) {
+            if ($status === 'completed') {
+                // Marquer le paiement comme complété
+                $payment->update([
+                    'status' => Payment::STATUS_COMPLETED,
+                    'provider' => $provider,
+                    'completed_at' => now(),
+                ]);
+
+                // Créditer le wallet de l'utilisateur
+                $user = $payment->user;
+                $user->creditWallet(
+                    $payment->amount,
+                    "Dépôt sur le wallet - {$payment->reference}",
+                    $payment
+                );
+
+                Log::info('Deposit payment completed and wallet credited', [
+                    'payment_id' => $payment->id,
+                    'user_id' => $user->id,
+                    'amount' => $payment->amount,
+                    'new_balance' => $user->fresh()->wallet_balance,
+                    'provider' => $provider,
+                ]);
+            } else {
+                // Marquer le paiement comme échoué
+                $payment->markAsFailed('Paiement refusé par ' . $provider);
+                Log::info('Deposit payment failed', ['payment_id' => $payment->id, 'provider' => $provider]);
             }
         });
     }
