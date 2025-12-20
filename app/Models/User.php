@@ -30,6 +30,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'avatar',
         'bio',
         'is_verified',
+        'is_premium',
+        'premium_started_at',
+        'premium_expires_at',
+        'premium_auto_renew',
         'is_banned',
         'banned_reason',
         'banned_at',
@@ -58,6 +62,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'phone_verified_at' => 'datetime',
         'password' => 'hashed',
         'is_verified' => 'boolean',
+        'is_premium' => 'boolean',
+        'premium_started_at' => 'datetime',
+        'premium_expires_at' => 'datetime',
+        'premium_auto_renew' => 'boolean',
         'is_banned' => 'boolean',
         'banned_at' => 'datetime',
         'last_seen_at' => 'datetime',
@@ -188,6 +196,27 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->last_seen_at->diffInMinutes(now()) < 5;
     }
 
+    /**
+     * Vérifier si l'utilisateur a un passe premium actif
+     */
+    public function getHasActivePremiumAttribute(): bool
+    {
+        return $this->is_premium
+            && $this->premium_expires_at
+            && $this->premium_expires_at->isFuture();
+    }
+
+    /**
+     * Jours restants du passe premium
+     */
+    public function getPremiumDaysRemainingAttribute(): int
+    {
+        if (!$this->has_active_premium || !$this->premium_expires_at) {
+            return 0;
+        }
+        return (int) now()->diffInDays($this->premium_expires_at);
+    }
+
     // ==================== RELATIONS ====================
 
     /**
@@ -272,6 +301,24 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Passes premium de l'utilisateur
+     */
+    public function premiumPasses(): HasMany
+    {
+        return $this->hasMany(PremiumPass::class);
+    }
+
+    /**
+     * Passe premium actif
+     */
+    public function activePremiumPass(): HasMany
+    {
+        return $this->hasMany(PremiumPass::class)
+            ->where('status', PremiumPass::STATUS_ACTIVE)
+            ->where('expires_at', '>', now());
+    }
+
+    /**
      * Paiements effectués
      */
     public function payments(): HasMany
@@ -293,6 +340,14 @@ class User extends Authenticatable implements MustVerifyEmail
     public function walletTransactions(): HasMany
     {
         return $this->hasMany(WalletTransaction::class);
+    }
+
+    /**
+     * Transactions CinetPay (dépôts, etc.)
+     */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
     }
 
     /**
@@ -426,6 +481,14 @@ class User extends Authenticatable implements MustVerifyEmail
             ->where('status', 'active')
             ->where('expires_at', '>', now())
             ->exists();
+    }
+
+    /**
+     * Vérifier si l'utilisateur peut voir l'identité de tout le monde (passe premium global)
+     */
+    public function canViewAllIdentities(): bool
+    {
+        return $this->has_active_premium;
     }
 
     /**

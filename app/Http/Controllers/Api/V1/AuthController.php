@@ -481,11 +481,36 @@ class AuthController extends Controller
             'content' => $validated['message'],
         ]);
 
-        // TODO: Envoyer les identifiants par SMS
-        // SMSService::sendWelcomeSMS($user->phone, $username, $password);
+        // Envoyer les identifiants par SMS au nouvel utilisateur
+        try {
+            $nexahService = app(\App\Services\Notifications\NexahService::class);
+            $welcomeSms = "🎉 Bienvenue sur Weylo!\n\n"
+                . "Votre compte a été créé avec succès.\n"
+                . "Identifiant: {$username}\n"
+                . "Code PIN: {$password}\n\n"
+                . "Téléchargez l'app: " . config('app.frontend_url');
 
-        // TODO: Notifier le destinataire du nouveau message
-        // NotificationService::sendNewMessageNotification($recipient, $message);
+            $nexahService->sendSms($user->phone, $welcomeSms);
+            \Log::info("SMS de bienvenue envoyé à {$user->phone}");
+        } catch (\Exception $e) {
+            \Log::error("Erreur lors de l'envoi du SMS de bienvenue: " . $e->getMessage());
+        }
+
+        // Envoyer SMS au destinataire si numéro valide
+        if ($recipient->phone && strlen(trim($recipient->phone)) > 5) {
+            try {
+                $nexahService = app(\App\Services\Notifications\NexahService::class);
+                $smsMessage = "📩 Nouveau message anonyme sur Weylo!\n\n"
+                    . "« " . substr($validated['message'], 0, 100)
+                    . (strlen($validated['message']) > 100 ? '...' : '') . " »\n\n"
+                    . "Connectez-vous pour lire: " . config('app.frontend_url');
+
+                $nexahService->sendSms($recipient->phone, $smsMessage);
+                \Log::info("SMS de notification envoyé au destinataire {$recipient->username} ({$recipient->phone})");
+            } catch (\Exception $e) {
+                \Log::error("Erreur lors de l'envoi du SMS au destinataire: " . $e->getMessage());
+            }
+        }
 
         return response()->json([
             'message' => 'Compte créé et message envoyé avec succès !',

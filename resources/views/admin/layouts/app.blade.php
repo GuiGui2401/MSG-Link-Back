@@ -90,6 +90,18 @@
                         Utilisateurs
                     </a>
 
+                    <a href="{{ route('admin.transactions.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.transactions.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-exchange-alt w-5 mr-3"></i>
+                        Transactions
+                        @php
+                            $pendingWithdrawalsTransactionsCount = \App\Models\Transaction::where('type', 'withdrawal')->where('status', 'pending')->count();
+                        @endphp
+                        @if($pendingWithdrawalsTransactionsCount > 0)
+                            <span class="ml-auto bg-yellow-500 text-gray-900 text-xs font-bold px-2 py-0.5 rounded-full">{{ $pendingWithdrawalsTransactionsCount }}</span>
+                        @endif
+                    </a>
+
                     <a href="{{ route('admin.moderation.index') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.moderation.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
                         <i class="fas fa-shield-alt w-5 mr-3"></i>
@@ -197,6 +209,12 @@
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.service-config.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
                         <i class="fas fa-plug w-5 mr-3"></i>
                         Services API
+                    </a>
+
+                    <a href="{{ route('admin.payment-config.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.payment-config.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-money-check-alt w-5 mr-3"></i>
+                        Config Paiements
                     </a>
                 </div>
             </nav>

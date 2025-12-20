@@ -48,31 +48,123 @@ class PaymentController extends Controller
      */
     public function webhookCinetPay(Request $request): JsonResponse
     {
-        Log::info('CinetPay webhook received', $request->all());
+        // CinetPay ping l'URL avec GET pour tester la disponibilité
+        if ($request->isMethod('get')) {
+            Log::info('🔔 [CINETPAY WEBHOOK] Ping GET reçu de CinetPay (test de disponibilité)');
+            return response()->json(['status' => 'ok'], 200);
+        }
+
+        Log::info('🔔 [CINETPAY WEBHOOK] ==================== NOUVELLE NOTIFICATION ====================');
+        Log::info('🔔 [CINETPAY WEBHOOK] Headers', $request->headers->all());
+        Log::info('🔔 [CINETPAY WEBHOOK] Body', $request->all());
+
+        // Vérification HMAC pour la sécurité
+        $receivedToken = $request->header('x-token');
+
+        if (!$receivedToken) {
+            Log::error('❌ [CINETPAY WEBHOOK] Token HMAC manquant dans l\'entête');
+            return response()->json(['status' => 'error', 'message' => 'Token manquant'], 401);
+        }
+
+        // Récupérer les données de la notification
+        $cpm_site_id = $request->input('cpm_site_id');
+        $cpm_trans_id = $request->input('cpm_trans_id');
+        $cpm_trans_date = $request->input('cpm_trans_date', '');
+        $cpm_amount = $request->input('cpm_amount', '');
+        $cpm_currency = $request->input('cpm_currency', '');
+        $signature = $request->input('signature', '');
+        $payment_method = $request->input('payment_method', '');
+        $cel_phone_num = $request->input('cel_phone_num', '');
+        $cpm_phone_prefixe = $request->input('cpm_phone_prefixe', '');
+        $cpm_language = $request->input('cpm_language', '');
+        $cpm_version = $request->input('cpm_version', '');
+        $cpm_payment_config = $request->input('cpm_payment_config', '');
+        $cpm_page_action = $request->input('cpm_page_action', '');
+        $cpm_custom = $request->input('cpm_custom', '');
+        $cpm_designation = $request->input('cpm_designation', '');
+        $cpm_error_message = $request->input('cpm_error_message', '');
+
+        // Vérifier les données obligatoires
+        if (!$cpm_trans_id || !$cpm_site_id) {
+            Log::error('❌ [CINETPAY WEBHOOK] Données obligatoires manquantes', [
+                'trans_id' => $cpm_trans_id,
+                'site_id' => $cpm_site_id
+            ]);
+            return response()->json(['status' => 'error', 'message' => 'Données manquantes'], 400);
+        }
+
+        // Construire la chaîne pour le token HMAC selon la doc CinetPay
+        $data = $cpm_site_id . $cpm_trans_id . $cpm_trans_date . $cpm_amount . $cpm_currency .
+                $signature . $payment_method . $cel_phone_num . $cpm_phone_prefixe .
+                $cpm_language . $cpm_version . $cpm_payment_config . $cpm_page_action .
+                $cpm_custom . $cpm_designation . $cpm_error_message;
+
+        // Récupérer la clé secrète
+        $secretKey = config('services.cinetpay.secret_key');
+
+        if (empty($secretKey)) {
+            Log::error('❌ [CINETPAY WEBHOOK] CINETPAY_SECRET_KEY non configurée');
+            // En développement, on peut continuer, mais en production c'est critique
+            // return response()->json(['status' => 'error', 'message' => 'Configuration manquante'], 500);
+        } else {
+            // Générer le token HMAC avec SHA256
+            $generatedToken = hash_hmac('SHA256', $data, $secretKey);
+
+            Log::info('🔐 [CINETPAY WEBHOOK] Vérification token HMAC', [
+                'received_token' => substr($receivedToken, 0, 20) . '...',
+                'generated_token' => substr($generatedToken, 0, 20) . '...',
+                'tokens_match' => hash_equals($receivedToken, $generatedToken)
+            ]);
+
+            // Vérifier que les tokens correspondent
+            if (!hash_equals($receivedToken, $generatedToken)) {
+                Log::error('❌ [CINETPAY WEBHOOK] Token HMAC invalide - Notification rejetée');
+                return response()->json(['status' => 'error', 'message' => 'Token invalide'], 401);
+            }
+
+            Log::info('✅ [CINETPAY WEBHOOK] Token HMAC validé');
+        }
 
         try {
+            Log::info('🔵 [CINETPAY WEBHOOK] Traitement de la notification', [
+                'transaction_id' => $cpm_trans_id,
+                'amount' => $cpm_amount,
+                'payment_method' => $payment_method,
+            ]);
+
             $result = $this->cinetPayService->handleWebhook($request->all());
 
             if (!$result['success']) {
+                Log::warning('⚠️ [CINETPAY WEBHOOK] Traitement échoué', $result);
                 return response()->json(['status' => 'error'], 400);
             }
 
             $reference = $result['reference'];
             $status = $result['status'];
 
+            Log::info('🔵 [CINETPAY WEBHOOK] Statut du paiement', [
+                'reference' => $reference,
+                'status' => $status,
+            ]);
+
             // Traiter selon le type de transaction
             if (str_starts_with($reference, 'DEPOSIT-')) {
+                Log::info('💰 [CINETPAY WEBHOOK] Traitement dépôt wallet');
                 $this->processDepositPayment($reference, $status, Payment::PROVIDER_CINETPAY);
             } elseif (str_starts_with($reference, 'GIFT-')) {
+                Log::info('🎁 [CINETPAY WEBHOOK] Traitement paiement cadeau');
                 $this->processGiftPayment($reference, $status, Payment::PROVIDER_CINETPAY);
             } elseif (str_starts_with($reference, 'PREM-')) {
+                Log::info('⭐ [CINETPAY WEBHOOK] Traitement abonnement premium');
                 $this->processPremiumPayment($reference, $status, Payment::PROVIDER_CINETPAY);
             }
 
+            Log::info('✅ [CINETPAY WEBHOOK] ==================== NOTIFICATION TRAITÉE ====================');
             return response()->json(['status' => 'ok']);
         } catch (\Exception $e) {
-            Log::error('CinetPay webhook error', [
+            Log::error('❌ [CINETPAY WEBHOOK] Exception lors du traitement', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'payload' => $request->all(),
             ]);
 
@@ -221,23 +313,43 @@ class PaymentController extends Controller
      */
     private function processDepositPayment(string $reference, string $status, string $provider = Payment::PROVIDER_CINETPAY): void
     {
+        Log::info('💰 [DEPOSIT] Traitement du paiement de dépôt', [
+            'reference' => $reference,
+            'status' => $status,
+            'provider' => $provider,
+        ]);
+
         // Récupérer le paiement par référence
         $payment = Payment::where('reference', $reference)
             ->where('type', Payment::TYPE_DEPOSIT)
             ->first();
 
         if (!$payment) {
-            Log::warning('Deposit payment not found', ['reference' => $reference]);
+            Log::warning('⚠️ [DEPOSIT] Paiement introuvable', ['reference' => $reference]);
             return;
         }
 
+        Log::info('💰 [DEPOSIT] Paiement trouvé', [
+            'payment_id' => $payment->id,
+            'user_id' => $payment->user_id,
+            'amount' => $payment->amount,
+            'current_status' => $payment->status,
+        ]);
+
         if ($payment->status === Payment::STATUS_COMPLETED) {
-            Log::info('Deposit payment already processed', ['reference' => $reference]);
+            Log::info('⚠️ [DEPOSIT] Paiement déjà traité', [
+                'reference' => $reference,
+                'payment_id' => $payment->id,
+            ]);
             return;
         }
 
         DB::transaction(function () use ($payment, $status, $provider) {
             if ($status === 'completed') {
+                Log::info('💰 [DEPOSIT] Marquage du paiement comme complété', [
+                    'payment_id' => $payment->id,
+                ]);
+
                 // Marquer le paiement comme complété
                 $payment->update([
                     'status' => Payment::STATUS_COMPLETED,
@@ -247,23 +359,38 @@ class PaymentController extends Controller
 
                 // Créditer le wallet de l'utilisateur
                 $user = $payment->user;
+                $balanceBefore = $user->wallet_balance;
+
+                Log::info('💰 [DEPOSIT] Crédit du wallet', [
+                    'user_id' => $user->id,
+                    'amount' => $payment->amount,
+                    'balance_before' => $balanceBefore,
+                ]);
+
                 $user->creditWallet(
                     $payment->amount,
                     "Dépôt sur le wallet - {$payment->reference}",
                     $payment
                 );
 
-                Log::info('Deposit payment completed and wallet credited', [
+                $balanceAfter = $user->fresh()->wallet_balance;
+
+                Log::info('✅ [DEPOSIT] Paiement complété et wallet crédité', [
                     'payment_id' => $payment->id,
                     'user_id' => $user->id,
                     'amount' => $payment->amount,
-                    'new_balance' => $user->fresh()->wallet_balance,
+                    'balance_before' => $balanceBefore,
+                    'balance_after' => $balanceAfter,
                     'provider' => $provider,
                 ]);
             } else {
                 // Marquer le paiement comme échoué
                 $payment->markAsFailed('Paiement refusé par ' . $provider);
-                Log::info('Deposit payment failed', ['payment_id' => $payment->id, 'provider' => $provider]);
+                Log::info('❌ [DEPOSIT] Paiement échoué', [
+                    'payment_id' => $payment->id,
+                    'provider' => $provider,
+                    'status' => $status,
+                ]);
             }
         });
     }

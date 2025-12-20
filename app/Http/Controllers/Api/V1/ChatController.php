@@ -194,7 +194,12 @@ class ChatController extends Controller
         ]);
 
         // Diffuser l'événement en temps réel
-        broadcast(new ChatMessageSent($message))->toOthers();
+        try {
+            broadcast(new ChatMessageSent($message))->toOthers();
+        } catch (\Exception $e) {
+            // Log l'erreur mais ne bloque pas l'envoi du message
+            \Log::warning('Broadcasting failed for message: ' . $e->getMessage());
+        }
 
         // Notification push si l'autre utilisateur n'est pas en ligne
         if (!$otherUser->is_online) {

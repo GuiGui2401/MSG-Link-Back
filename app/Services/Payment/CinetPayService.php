@@ -2,27 +2,26 @@
 
 namespace App\Services\Payment;
 
+use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class CinetPayService implements PaymentServiceInterface
 {
     private string $apiKey;
     private string $siteId;
     private string $secretKey;
-    private string $baseUrl;
     private string $notifyUrl;
     private string $returnUrl;
+    private string $baseUrl = 'https://api-checkout.cinetpay.com/v2';
 
     public function __construct()
     {
-        $this->apiKey = config('services.cinetpay.api_key');
-        $this->siteId = config('services.cinetpay.site_id');
-        $this->secretKey = config('services.cinetpay.secret_key');
-        $this->baseUrl = config('services.cinetpay.base_url', 'https://api-checkout.cinetpay.com/v2');
-        $this->notifyUrl = config('app.url') . '/api/v1/payments/webhook/cinetpay';
-        $this->returnUrl = config('app.frontend_url') . '/payment/callback';
+        $this->apiKey = Setting::get('cinetpay_api_key', config('cinetpay.api_key'));
+        $this->siteId = Setting::get('cinetpay_site_id', config('cinetpay.site_id'));
+        $this->secretKey = Setting::get('cinetpay_secret_key', config('cinetpay.secret_key'));
+        $this->notifyUrl = Setting::get('cinetpay_notify_url', config('cinetpay.notify_url')) ?? config('app.url') . '/api/v1/payments/webhook/cinetpay';
+        $this->returnUrl = config('app.frontend_url', 'http://localhost:3000') . '/payment/callback';
     }
 
     /**
@@ -30,56 +29,93 @@ class CinetPayService implements PaymentServiceInterface
      */
     public function initiatePayment(array $data): array
     {
-        $transactionId = $data['reference'] ?? 'CP-' . Str::upper(Str::random(12));
+        $transactionId = $data['transaction_id'] ?? $data['reference'] ?? 'CP-' . time() . rand(1000, 9999);
 
         $payload = [
             'apikey' => $this->apiKey,
             'site_id' => $this->siteId,
             'transaction_id' => $transactionId,
-            'amount' => $data['amount'],
+            'amount' => (int) $data['amount'],
             'currency' => $data['currency'] ?? 'XAF',
-            'description' => $data['description'] ?? 'Paiement Weylo',
+            'description' => $data['description'] ?? 'Paiement',
+            'channels' => $data['channels'] ?? 'ALL',
             'notify_url' => $this->notifyUrl,
             'return_url' => $this->returnUrl,
-            'channels' => 'ALL',
-            'metadata' => json_encode($data['metadata'] ?? []),
-            'customer_name' => $data['user']->full_name ?? '',
-            'customer_email' => $data['user']->email ?? '',
-            'customer_phone_number' => $data['user']->phone ?? '',
-            'customer_address' => 'Cameroun',
-            'customer_city' => 'Douala',
-            'customer_country' => 'CM',
+            'customer_id' => $data['customer_id'] ?? '',
+            'customer_name' => $data['customer_name'] ?? 'User',
+            'customer_surname' => $data['customer_surname'] ?? 'Weylo',
+            'customer_email' => $data['customer_email'] ?? '',
+            'customer_phone_number' => $data['customer_phone_number'] ?? '+237600000000',
+            'customer_address' => $data['customer_address'] ?? 'Douala',
+            'customer_city' => $data['customer_city'] ?? 'Douala',
+            'customer_country' => $data['customer_country'] ?? 'CM',
+            'customer_state' => $data['customer_state'] ?? 'CM',
+            'customer_zip_code' => $data['customer_zip_code'] ?? '00237',
+            'metadata' => $data['metadata'] ?? '',
+            'lang' => $data['lang'] ?? 'fr'
         ];
 
+        Log::info('🔵 [CINETPAY] Initiation paiement', [
+            'transaction_id' => $transactionId,
+            'amount' => $payload['amount'],
+            'return_url' => $this->returnUrl,
+            'notify_url' => $this->notifyUrl,
+            'full_payload' => $payload,
+        ]);
+
         try {
-            $response = Http::timeout(30)
-                ->post("{$this->baseUrl}/payment", $payload);
+            $response = Http::timeout(30)->withHeaders([
+                'Content-Type' => 'application/json',
+                'User-Agent' => 'Weylo-App/1.0'
+            ])->post("{$this->baseUrl}/payment", $payload);
 
-            if ($response->successful()) {
-                $result = $response->json();
+            if ($response->failed()) {
+                Log::error('❌ [CINETPAY] Erreur HTTP', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
 
-                if (isset($result['data']['payment_url'])) {
-                    return [
-                        'success' => true,
-                        'reference' => $transactionId,
-                        'payment_url' => $result['data']['payment_url'],
-                        'payment_token' => $result['data']['payment_token'] ?? null,
-                        'provider' => 'cinetpay',
-                    ];
-                }
+                return [
+                    'success' => false,
+                    'message' => 'Erreur de connexion à CinetPay'
+                ];
             }
 
-            Log::error('CinetPay payment initiation failed', [
-                'response' => $response->json(),
-                'payload' => array_diff_key($payload, ['apikey' => '']),
+            $responseData = $response->json();
+
+            Log::info('📥 [CINETPAY] Réponse reçue', [
+                'code' => $responseData['code'] ?? null,
+                'message' => $responseData['message'] ?? null,
             ]);
 
-            throw new \Exception($result['message'] ?? 'Erreur lors de l\'initiation du paiement');
+            if (!isset($responseData['code']) || $responseData['code'] !== '201') {
+                return [
+                    'success' => false,
+                    'message' => $responseData['message'] ?? 'Erreur lors de l\'initialisation du paiement',
+                    'data' => $responseData
+                ];
+            }
+
+            return [
+                'success' => true,
+                'reference' => $transactionId,
+                'data' => [
+                    'payment_url' => $responseData['data']['payment_url'] ?? null,
+                    'payment_token' => $responseData['data']['payment_token'] ?? null,
+                ],
+                'provider' => 'cinetpay',
+            ];
+
         } catch (\Exception $e) {
-            Log::error('CinetPay payment exception', [
-                'message' => $e->getMessage(),
+            Log::error('❌ [CINETPAY] Exception', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transactionId,
             ]);
-            throw $e;
+
+            return [
+                'success' => false,
+                'message' => 'Erreur technique: ' . $e->getMessage()
+            ];
         }
     }
 
@@ -88,42 +124,60 @@ class CinetPayService implements PaymentServiceInterface
      */
     public function checkPaymentStatus(string $reference): array
     {
-        $payload = [
-            'apikey' => $this->apiKey,
-            'site_id' => $this->siteId,
-            'transaction_id' => $reference,
-        ];
+        Log::info('🔍 [CINETPAY] Vérification statut', ['reference' => $reference]);
 
         try {
-            $response = Http::timeout(30)
-                ->post("{$this->baseUrl}/payment/check", $payload);
+            $payload = [
+                'apikey' => $this->apiKey,
+                'site_id' => $this->siteId,
+                'transaction_id' => $reference
+            ];
 
-            if ($response->successful()) {
-                $result = $response->json();
-                $data = $result['data'] ?? [];
+            $response = Http::timeout(30)->withHeaders([
+                'Content-Type' => 'application/json',
+                'User-Agent' => 'Weylo-App/1.0'
+            ])->post("{$this->baseUrl}/payment/check", $payload);
 
-                $status = match ($data['status'] ?? '') {
+            $responseData = $response->json();
+
+            if ($response->successful() && isset($responseData['code']) && $responseData['code'] === '00') {
+                $status = $responseData['data']['status'] ?? 'PENDING';
+
+                // Mapper les statuts CinetPay vers nos statuts
+                $mappedStatus = match($status) {
                     'ACCEPTED' => 'completed',
-                    'REFUSED', 'CANCELLED' => 'failed',
+                    'REFUSED' => 'failed',
+                    'CANCELLED', 'CANCELED' => 'cancelled',
                     default => 'pending',
                 };
 
                 return [
-                    'status' => $status,
-                    'provider_reference' => $data['payment_method'] ?? null,
-                    'amount' => $data['amount'] ?? 0,
-                    'metadata' => json_decode($data['metadata'] ?? '{}', true),
-                    'raw' => $data,
+                    'status' => $mappedStatus,
+                    'amount' => $responseData['data']['amount'] ?? 0,
+                    'provider_reference' => $reference,
+                    'metadata' => $responseData['data'] ?? [],
                 ];
             }
 
-            throw new \Exception('Impossible de vérifier le statut du paiement');
+            return [
+                'status' => 'pending',
+                'amount' => 0,
+                'provider_reference' => $reference,
+                'metadata' => [],
+            ];
+
         } catch (\Exception $e) {
-            Log::error('CinetPay check status exception', [
+            Log::error('❌ [CINETPAY] Erreur vérification', [
                 'reference' => $reference,
-                'message' => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
-            throw $e;
+
+            return [
+                'status' => 'pending',
+                'amount' => 0,
+                'provider_reference' => $reference,
+                'metadata' => ['error' => $e->getMessage()],
+            ];
         }
     }
 
@@ -132,99 +186,85 @@ class CinetPayService implements PaymentServiceInterface
      */
     public function handleWebhook(array $payload): array
     {
-        Log::info('CinetPay webhook received', $payload);
+        Log::info('🔔 [CINETPAY] Traitement webhook', [
+            'transaction_id' => $payload['cpm_trans_id'] ?? null,
+        ]);
 
         $transactionId = $payload['cpm_trans_id'] ?? null;
 
         if (!$transactionId) {
+            Log::error('❌ [CINETPAY] Transaction ID manquant dans le webhook');
             return [
                 'success' => false,
-                'error' => 'Transaction ID manquant',
+                'message' => 'Transaction ID manquant',
             ];
         }
 
-        // Vérifier le statut réel via l'API
-        try {
-            $statusResult = $this->checkPaymentStatus($transactionId);
+        // Vérifier le statut via l'API
+        $status = $this->checkPaymentStatus($transactionId);
 
-            return [
-                'success' => true,
-                'reference' => $transactionId,
-                'status' => $statusResult['status'],
-                'amount' => $statusResult['amount'],
-                'metadata' => $statusResult['metadata'],
-            ];
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'reference' => $transactionId,
-                'error' => $e->getMessage(),
-            ];
-        }
+        return [
+            'success' => true,
+            'reference' => $transactionId,
+            'status' => $status['status'],
+            'amount' => $status['amount'],
+        ];
     }
 
     /**
-     * Initier un transfert Mobile Money (pour les retraits)
+     * Effectuer un transfert (pour les retraits)
      */
     public function initiateTransfer(array $data): array
     {
-        // CinetPay propose aussi des transferts sortants
-        // Cette méthode doit être implémentée selon la documentation CinetPay
-
-        $payload = [
-            'apikey' => $this->apiKey,
-            'site_id' => $this->siteId,
-            'transaction_id' => $data['reference'],
+        Log::info('💸 [CINETPAY] Initiation transfert', [
             'amount' => $data['amount'],
-            'currency' => 'XAF',
-            'phone' => $data['phone'],
-            'phone_prefix' => '237',
-            'payment_method' => $this->mapProvider($data['provider']),
-        ];
+            'phone' => $data['phone'] ?? null,
+        ]);
 
         try {
-            $response = Http::timeout(30)
-                ->post("{$this->baseUrl}/transfer", $payload);
+            $payload = [
+                'apikey' => $this->apiKey,
+                'site_id' => $this->siteId,
+                'transfer_password' => Setting::get('cinetpay_transfer_password', config('cinetpay.transfer_password')),
+                'phone' => $data['phone'],
+                'amount' => (int) $data['amount'],
+                'transaction_id' => $data['reference'] ?? 'TF-' . time() . rand(1000, 9999),
+                'provider' => strtoupper($data['provider'] ?? 'ORANGE'),
+            ];
 
-            if ($response->successful()) {
-                $result = $response->json();
+            $response = Http::timeout(30)->withHeaders([
+                'Content-Type' => 'application/json',
+                'User-Agent' => 'Weylo-App/1.0'
+            ])->post("{$this->baseUrl}/transfer", $payload);
 
+            $responseData = $response->json();
+
+            Log::info('📥 [CINETPAY] Réponse transfert', $responseData);
+
+            if ($response->successful() && isset($responseData['code']) && $responseData['code'] === '00') {
                 return [
                     'success' => true,
-                    'reference' => $data['reference'],
-                    'provider_reference' => $result['data']['transfer_id'] ?? null,
-                    'status' => 'processing',
+                    'reference' => $payload['transaction_id'],
+                    'message' => 'Transfert initié avec succès',
+                    'data' => $responseData['data'] ?? [],
                 ];
             }
 
-            throw new \Exception($response->json()['message'] ?? 'Erreur lors du transfert');
+            return [
+                'success' => false,
+                'message' => $responseData['message'] ?? 'Erreur lors du transfert',
+                'data' => $responseData,
+            ];
+
         } catch (\Exception $e) {
-            Log::error('CinetPay transfer exception', [
-                'message' => $e->getMessage(),
+            Log::error('❌ [CINETPAY] Erreur transfert', [
+                'error' => $e->getMessage(),
             ]);
-            throw $e;
+
+            return [
+                'success' => false,
+                'message' => 'Erreur technique: ' . $e->getMessage(),
+            ];
         }
-    }
-
-    /**
-     * Mapper le provider vers le format CinetPay
-     */
-    private function mapProvider(string $provider): string
-    {
-        return match ($provider) {
-            'mtn_momo' => 'MOMO',
-            'orange_money' => 'OM',
-            default => 'MOMO',
-        };
-    }
-
-    /**
-     * Vérifier la signature du webhook
-     */
-    public function verifyWebhookSignature(array $payload, string $signature): bool
-    {
-        // Implémenter selon la documentation CinetPay
-        $computedSignature = hash('sha256', $payload['cpm_trans_id'] . $this->secretKey);
-        return hash_equals($computedSignature, $signature);
     }
 }

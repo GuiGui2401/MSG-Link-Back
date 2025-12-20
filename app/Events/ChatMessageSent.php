@@ -36,7 +36,7 @@ class ChatMessageSent implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
-        return [
+        $data = [
             'id' => $this->message->id,
             'conversation_id' => $this->message->conversation_id,
             'sender_id' => $this->message->sender_id,
@@ -45,5 +45,23 @@ class ChatMessageSent implements ShouldBroadcastNow
             'type' => $this->message->type,
             'created_at' => $this->message->created_at->toIso8601String(),
         ];
+
+        // Ajouter les données du cadeau si c'est un message de type gift
+        if ($this->message->type === ChatMessage::TYPE_GIFT && $this->message->giftTransaction) {
+            $gift = $this->message->giftTransaction->gift;
+            $data['gift_data'] = [
+                'id' => $gift->id,
+                'name' => $gift->name,
+                'icon' => $gift->icon,
+                'price' => $gift->price,
+                'formatted_price' => $gift->formatted_price,
+                'tier' => $gift->tier,
+                'background_color' => $gift->background_color,
+                'description' => $gift->description,
+                'is_anonymous' => $this->message->giftTransaction->is_anonymous,
+            ];
+        }
+
+        return $data;
     }
 }

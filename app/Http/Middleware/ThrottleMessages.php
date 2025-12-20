@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Setting;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -23,7 +24,7 @@ class ThrottleMessages
         }
 
         $key = 'messages:' . $user->id;
-        $maxAttempts = config('msglink.messages_rate_limit', 10);
+        $maxAttempts = Setting::get('rate_messages_per_minute', 10);
         $decayMinutes = 1;
 
         if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {

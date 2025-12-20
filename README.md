@@ -25,7 +25,7 @@ Backend API pour Weylo - Application de messagerie anonyme avec monétisation.
 
 ```bash
 git clone <repository-url>
-cd msg-link-backend
+cd Weylo-backend
 ```
 
 ### 2. Installer les dépendances

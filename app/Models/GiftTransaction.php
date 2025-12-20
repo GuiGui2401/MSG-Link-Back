@@ -23,12 +23,14 @@ class GiftTransaction extends Model
         'status',
         'payment_reference',
         'message',
+        'is_anonymous',
     ];
 
     protected $casts = [
         'amount' => 'integer',
         'platform_fee' => 'integer',
         'net_amount' => 'integer',
+        'is_anonymous' => 'boolean',
     ];
 
     /**

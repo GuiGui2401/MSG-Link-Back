@@ -311,7 +311,12 @@ class GroupController extends Controller
         $message->is_own = true;
 
         // Diffuser l'événement en temps réel
-        broadcast(new GroupMessageSent($message))->toOthers();
+        try {
+            broadcast(new GroupMessageSent($message))->toOthers();
+        } catch (\Exception $e) {
+            // Log l'erreur mais ne bloque pas l'envoi du message
+            \Log::warning('Broadcasting failed for group message: ' . $e->getMessage());
+        }
 
         return response()->json([
             'message' => $message,

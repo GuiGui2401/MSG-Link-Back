@@ -13,10 +13,18 @@ class SendGiftRequest extends FormRequest
 
     public function rules(): array
     {
+        // Vérifier si on est dans une conversation (route parameter présent)
+        $conversation = $this->route('conversation');
+        $isInConversation = $conversation !== null;
+
         return [
             'gift_id' => 'required|integer|exists:gifts,id',
-            'recipient_username' => 'required_without:conversation_id|nullable|string|exists:users,username',
+            // Si on est dans une conversation, recipient_username n'est pas requis
+            'recipient_username' => $isInConversation
+                ? 'nullable|string|exists:users,username'
+                : 'required|string|exists:users,username',
             'message' => 'nullable|string|max:200',
+            'is_anonymous' => 'nullable|boolean',
         ];
     }
 

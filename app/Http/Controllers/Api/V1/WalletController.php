@@ -8,16 +8,14 @@ use App\Http\Resources\WalletTransactionResource;
 use App\Http\Resources\WithdrawalResource;
 use App\Models\Withdrawal;
 use App\Models\WalletTransaction;
-use App\Models\Payment;
-use App\Services\Payment\CinetPayService;
+use App\Services\Payment\DepositService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 
 class WalletController extends Controller
 {
     public function __construct(
-        private CinetPayService $cinetPayService
+        private DepositService $depositService
     ) {}
 
     /**
@@ -42,37 +40,86 @@ class WalletController extends Controller
     }
 
     /**
-     * Historique des transactions
+     * Historique des transactions (wallet_transactions + transactions)
      */
     public function transactions(Request $request): JsonResponse
     {
         $user = $request->user();
+        $perPage = $request->get('per_page', 20);
 
-        $query = WalletTransaction::byUser($user->id)
-            ->orderBy('created_at', 'desc');
+        // 1. Récupérer les wallet_transactions (deposits, credits, debits)
+        $walletTransactions = WalletTransaction::byUser($user->id)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function($t) {
+                return [
+                    'id' => 'wt_' . $t->id,
+                    'type' => $t->type,
+                    'amount' => $t->amount,
+                    'description' => $t->description,
+                    'status' => 'completed', // Les wallet_transactions sont toujours completed
+                    'created_at' => $t->created_at,
+                    'reference' => $t->reference,
+                    'meta' => null,
+                ];
+            });
 
-        // Filtres optionnels
+        // 2. Récupérer les transactions (withdrawals, deposits via CinetPay)
+        $regularTransactions = \App\Models\Transaction::where('user_id', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function($t) {
+                return [
+                    'id' => 't_' . $t->id,
+                    'type' => $t->type,
+                    'amount' => $t->amount,
+                    'description' => $t->description,
+                    'status' => $t->status,
+                    'created_at' => $t->created_at,
+                    'reference' => null,
+                    'meta' => $t->meta,
+                ];
+            });
+
+        // 3. Fusionner et trier par date
+        $allTransactions = $walletTransactions->merge($regularTransactions)
+            ->sortByDesc('created_at')
+            ->values();
+
+        // 4. Filtres optionnels
         if ($request->has('type')) {
-            $query->where('type', $request->type);
+            $allTransactions = $allTransactions->filter(function($t) use ($request) {
+                return $t['type'] === $request->type;
+            })->values();
         }
 
         if ($request->has('from')) {
-            $query->whereDate('created_at', '>=', $request->from);
+            $from = \Carbon\Carbon::parse($request->from)->startOfDay();
+            $allTransactions = $allTransactions->filter(function($t) use ($from) {
+                return \Carbon\Carbon::parse($t['created_at'])->gte($from);
+            })->values();
         }
 
         if ($request->has('to')) {
-            $query->whereDate('created_at', '<=', $request->to);
+            $to = \Carbon\Carbon::parse($request->to)->endOfDay();
+            $allTransactions = $allTransactions->filter(function($t) use ($to) {
+                return \Carbon\Carbon::parse($t['created_at'])->lte($to);
+            })->values();
         }
 
-        $transactions = $query->paginate($request->get('per_page', 20));
+        // 5. Pagination manuelle
+        $total = $allTransactions->count();
+        $page = $request->get('page', 1);
+        $offset = ($page - 1) * $perPage;
+        $paginatedTransactions = $allTransactions->slice($offset, $perPage)->values();
 
         return response()->json([
-            'transactions' => WalletTransactionResource::collection($transactions),
+            'transactions' => $paginatedTransactions,
             'meta' => [
-                'current_page' => $transactions->currentPage(),
-                'last_page' => $transactions->lastPage(),
-                'per_page' => $transactions->perPage(),
-                'total' => $transactions->total(),
+                'current_page' => (int) $page,
+                'last_page' => (int) ceil($total / $perPage),
+                'per_page' => (int) $perPage,
+                'total' => $total,
             ],
         ]);
     }
@@ -129,176 +176,6 @@ class WalletController extends Controller
             'message' => 'Demande de retrait créée avec succès.',
             'withdrawal' => new WithdrawalResource($withdrawal),
         ], 201);
-    }
-
-    /**
-     * Initier un dépôt vers le wallet
-     */
-    public function deposit(Request $request): JsonResponse
-    {
-        $user = $request->user();
-
-        // Validation
-        $validator = Validator::make($request->all(), [
-            'amount' => ['required', 'integer', 'min:100', 'max:10000000'],
-            'provider' => ['nullable', 'string', 'in:cinetpay,ligosapp'],
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation échouée.',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
-
-        $amount = $request->amount;
-        $provider = $request->provider ?? 'cinetpay';
-
-        // Vérifier que le montant est un multiple de 5
-        if ($amount % 5 !== 0) {
-            return response()->json([
-                'message' => 'Le montant doit être un multiple de 5 FCFA.',
-            ], 422);
-        }
-
-        try {
-            // Créer un enregistrement Payment en pending
-            $payment = Payment::create([
-                'user_id' => $user->id,
-                'type' => Payment::TYPE_DEPOSIT,
-                'provider' => $provider,
-                'amount' => $amount,
-                'currency' => 'XAF',
-                'status' => Payment::STATUS_PENDING,
-                'metadata' => [
-                    'purpose' => 'wallet_deposit',
-                ],
-            ]);
-
-            // Générer une référence unique avec préfixe DEPOSIT-
-            $reference = 'DEPOSIT-' . $payment->id;
-            $payment->update(['reference' => $reference]);
-
-            // Initier le paiement via CinetPay
-            $paymentResult = $this->cinetPayService->initiatePayment([
-                'reference' => $reference,
-                'amount' => $amount,
-                'currency' => 'XAF',
-                'description' => "Recharge de wallet - {$amount} FCFA",
-                'user' => $user,
-                'metadata' => [
-                    'payment_id' => $payment->id,
-                    'user_id' => $user->id,
-                    'type' => 'deposit',
-                ],
-            ]);
-
-            if (!$paymentResult['success']) {
-                $payment->markAsFailed('Échec de l\'initiation du paiement');
-                return response()->json([
-                    'message' => 'Impossible d\'initier le paiement.',
-                ], 500);
-            }
-
-            return response()->json([
-                'message' => 'Paiement initié avec succès.',
-                'payment' => [
-                    'id' => $payment->id,
-                    'reference' => $payment->reference,
-                    'amount' => $payment->amount,
-                    'currency' => $payment->currency,
-                    'status' => $payment->status,
-                ],
-                'payment_url' => $paymentResult['payment_url'],
-                'payment_token' => $paymentResult['payment_token'] ?? null,
-            ], 201);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors de l\'initiation du dépôt.',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
-    }
-
-    /**
-     * Vérifier le statut d'un dépôt
-     */
-    public function checkDepositStatus(Request $request, string $reference): JsonResponse
-    {
-        $user = $request->user();
-
-        // Vérifier que la référence commence par DEPOSIT-
-        if (!str_starts_with($reference, 'DEPOSIT-')) {
-            return response()->json([
-                'message' => 'Référence invalide.',
-            ], 400);
-        }
-
-        // Récupérer le paiement
-        $payment = Payment::where('reference', $reference)
-            ->where('user_id', $user->id)
-            ->where('type', Payment::TYPE_DEPOSIT)
-            ->first();
-
-        if (!$payment) {
-            return response()->json([
-                'message' => 'Paiement introuvable.',
-            ], 404);
-        }
-
-        try {
-            // Vérifier le statut auprès de CinetPay
-            $statusResult = $this->cinetPayService->checkPaymentStatus($reference);
-
-            // Mettre à jour le statut du paiement si nécessaire
-            if ($statusResult['status'] === 'completed' && $payment->status !== Payment::STATUS_COMPLETED) {
-                // Le paiement est confirmé, créditer le wallet
-                $this->processDepositPayment($payment);
-            } elseif ($statusResult['status'] === 'failed' && $payment->status !== Payment::STATUS_FAILED) {
-                $payment->markAsFailed('Paiement refusé par CinetPay');
-            }
-
-            // Recharger le paiement
-            $payment->refresh();
-
-            return response()->json([
-                'payment' => [
-                    'id' => $payment->id,
-                    'reference' => $payment->reference,
-                    'amount' => $payment->amount,
-                    'currency' => $payment->currency,
-                    'status' => $payment->status,
-                    'completed_at' => $payment->completed_at,
-                ],
-                'wallet_balance' => $user->fresh()->wallet_balance,
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors de la vérification du statut.',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
-    }
-
-    /**
-     * Traiter un paiement de dépôt confirmé
-     */
-    private function processDepositPayment(Payment $payment): void
-    {
-        if ($payment->status === Payment::STATUS_COMPLETED) {
-            return; // Déjà traité
-        }
-
-        // Marquer le paiement comme complété
-        $payment->markAsCompleted();
-
-        // Créditer le wallet de l'utilisateur
-        $user = $payment->user;
-        $user->creditWallet(
-            $payment->amount,
-            "Dépôt sur le wallet - {$payment->reference}",
-            $payment
-        );
     }
 
     /**
@@ -437,5 +314,41 @@ class WalletController extends Controller
             'fee' => Withdrawal::WITHDRAWAL_FEE,
             'currency' => 'XAF',
         ]);
+    }
+
+    /**
+     * Initier un dépôt sur le wallet
+     */
+    public function initiateDeposit(Request $request): JsonResponse
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:100',
+            'phone_number' => 'nullable|string',
+        ]);
+
+        $user = $request->user();
+        $amount = (float) $request->amount;
+        $phoneNumber = $request->phone_number;
+
+        $result = $this->depositService->initiateDeposit($user, $amount, $phoneNumber);
+
+        if (!$result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'] ?? 'Erreur lors de l\'initiation du dépôt',
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dépôt initié avec succès',
+            'data' => [
+                'provider' => $result['provider'],
+                'payment_url' => $result['payment_url'] ?? null,
+                'payment_token' => $result['payment_token'] ?? null,
+                'reference' => $result['reference'],
+                'payment_id' => $result['payment_id'],
+            ],
+        ], 201);
     }
 }

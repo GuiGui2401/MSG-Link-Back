@@ -2,10 +2,11 @@
 
 namespace App\Providers;
 
+use Illuminate\Support\ServiceProvider;
 use App\Services\Payment\CinetPayService;
 use App\Services\Payment\LigosAppService;
+use App\Services\Payment\DepositService;
 use App\Services\Payment\PaymentServiceInterface;
-use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -23,14 +24,14 @@ class AppServiceProvider extends ServiceProvider
             return new LigosAppService();
         });
 
-        // Bind par défaut vers CinetPay (peut être changé selon la configuration)
-        $this->app->bind(PaymentServiceInterface::class, function ($app) {
-            $defaultProvider = config('msglink.payments.default_payment_provider', 'cinetpay');
+        // Bind l'interface au service CinetPay par défaut
+        $this->app->bind(PaymentServiceInterface::class, CinetPayService::class);
 
-            return match ($defaultProvider) {
-                'ligosapp' => $app->make(LigosAppService::class),
-                default => $app->make(CinetPayService::class),
-            };
+        $this->app->singleton(DepositService::class, function ($app) {
+            return new DepositService(
+                $app->make(LigosAppService::class),
+                $app->make(CinetPayService::class)
+            );
         });
     }
 

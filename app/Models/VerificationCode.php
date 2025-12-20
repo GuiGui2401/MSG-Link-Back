@@ -88,8 +88,8 @@ class VerificationCode extends Model
             ->valid()
             ->delete();
 
-        $codeLength = config('msglink.security.verification_code_length', 6);
-        $expiryMinutes = config('msglink.security.verification_code_expiry', 15);
+        $codeLength = Setting::get('security_verification_code_length', 6);
+        $expiryMinutes = Setting::get('security_verification_code_expiry', 15);
 
         return static::create([
             'user_id' => $user->id,

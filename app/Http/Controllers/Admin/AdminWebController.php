@@ -15,6 +15,7 @@ use App\Models\Report;
 use App\Models\Story;
 use App\Models\Group;
 use App\Models\GroupMessage;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -289,7 +290,58 @@ class AdminWebController extends Controller
      */
     public function settings()
     {
-        return view('admin.settings');
+        // Group settings by category
+        $paymentSettings = Setting::where('group', 'payment')->get();
+        $premiumSettings = Setting::where('group', 'premium')->get();
+        $walletSettings = Setting::where('group', 'wallet')->get();
+        $chatSettings = Setting::where('group', 'chat')->get();
+        $securitySettings = Setting::where('group', 'security')->get();
+        $moderationSettings = Setting::where('group', 'moderation')->get();
+        $rateLimitsSettings = Setting::where('group', 'rate_limits')->get();
+        $generalSettings = Setting::where('group', 'general')->get();
+
+        return view('admin.settings.index', compact(
+            'paymentSettings',
+            'premiumSettings',
+            'walletSettings',
+            'chatSettings',
+            'securitySettings',
+            'moderationSettings',
+            'rateLimitsSettings',
+            'generalSettings'
+        ));
+    }
+
+    /**
+     * Update settings
+     */
+    public function updateSettings(Request $request)
+    {
+        try {
+            $allSettings = Setting::all();
+
+            foreach ($allSettings as $setting) {
+                $key = $setting->key;
+
+                if ($setting->type === 'boolean') {
+                    // Pour les checkboxes, la valeur est présente seulement si cochée
+                    $value = $request->has($key) ? '1' : '0';
+                } else {
+                    // Pour les autres types, récupérer la valeur du champ
+                    $value = $request->input($key, '');
+                }
+
+                $setting->update(['value' => $value]);
+                \Cache::forget('setting_' . $key);
+            }
+
+            Setting::clearCache();
+
+            return redirect()->route('admin.settings')->with('success', 'Paramètres mis à jour avec succès.');
+        } catch (\Exception $e) {
+            \Log::error('Erreur mise à jour paramètres: ' . $e->getMessage());
+            return back()->with('error', 'Erreur lors de la mise à jour des paramètres.');
+        }
     }
 
     // ==================== PROFILE ====================
@@ -626,7 +678,7 @@ class AdminWebController extends Controller
             'last_name' => 'nullable|string|max:255',
             'username' => 'required|string|max:255|unique:users,username,' . $user->id,
             'email' => 'required|email|max:255|unique:users,email,' . $user->id,
-            'phone' => 'nullable|string|max:20',
+            'phone' => 'nullable|string|max:20|unique:users,phone,' . $user->id,
             'bio' => 'nullable|string|max:500',
             'role' => 'required|in:' . implode(',', $allowedRoles),
             'password' => 'nullable|string|min:8|confirmed',
@@ -636,11 +688,11 @@ class AdminWebController extends Controller
 
         $data = [
             'first_name' => $validated['first_name'],
-            'last_name' => $validated['last_name'],
+            'last_name' => $validated['last_name'] ?? '',
             'username' => $validated['username'],
             'email' => $validated['email'],
-            'phone' => $validated['phone'],
-            'bio' => $validated['bio'],
+            'phone' => $validated['phone'] ?? '',
+            'bio' => $validated['bio'] ?? '',
             'is_verified' => $request->boolean('is_verified'),
         ];
 

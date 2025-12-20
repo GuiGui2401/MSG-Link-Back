@@ -9,15 +9,18 @@ use App\Http\Resources\MessageResource;
 use App\Models\AnonymousMessage;
 use App\Models\User;
 use App\Models\PremiumSubscription;
+use App\Models\WalletTransaction;
 use App\Events\MessageSent;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class MessageController extends Controller
 {
     public function __construct(
-        private NotificationService $notificationService
+        private NotificationService $notificationService,
+        private \App\Services\Notifications\NexahService $nexahService
     ) {}
 
     /**
@@ -148,6 +151,26 @@ class MessageController extends Controller
         // Envoyer notification
         $this->notificationService->sendNewMessageNotification($message);
 
+        // Envoyer SMS au destinataire si numéro valide
+        if ($recipient->phone && strlen(trim($recipient->phone)) > 5) {
+            try {
+                $smsMessage = "📩 Nouveau message anonyme sur Weylo!\n\n"
+                    . "« " . substr($validated['content'], 0, 100)
+                    . (strlen($validated['content']) > 100 ? '...' : '') . " »\n\n"
+                    . "Connectez-vous pour lire: " . config('app.frontend_url');
+
+                $this->nexahService->sendSms(
+                    $recipient->phone,
+                    $smsMessage
+                );
+
+                \Log::info("SMS envoyé au destinataire {$recipient->username} ({$recipient->phone})");
+            } catch (\Exception $e) {
+                \Log::error("Erreur lors de l'envoi du SMS: " . $e->getMessage());
+                // Ne pas bloquer l'envoi du message si l'SMS échoue
+            }
+        }
+
         return response()->json([
             'message' => 'Message envoyé avec succès.',
             'data' => new MessageResource($message),
@@ -155,7 +178,7 @@ class MessageController extends Controller
     }
 
     /**
-     * Révéler l'identité de l'expéditeur (premium)
+     * Révéler l'identité de l'expéditeur
      */
     public function reveal(Request $request, AnonymousMessage $message): JsonResponse
     {
@@ -175,27 +198,59 @@ class MessageController extends Controller
             ]);
         }
 
-        // Vérifier si l'utilisateur a un abonnement premium actif pour ce message
-        $subscription = PremiumSubscription::where('subscriber_id', $user->id)
-            ->where('message_id', $message->id)
-            ->active()
-            ->first();
+        // Récupérer le prix de révélation depuis les settings
+        $revealPrice = reveal_anonymous_price();
 
-        if (!$subscription) {
+        // Vérifier si l'utilisateur a un solde suffisant
+        if ($user->wallet_balance < $revealPrice) {
             return response()->json([
-                'message' => 'Un abonnement premium est requis pour révéler l\'identité.',
-                'requires_premium' => true,
-                'price' => PremiumSubscription::MONTHLY_PRICE,
+                'message' => 'Solde insuffisant pour révéler l\'identité.',
+                'requires_payment' => true,
+                'price' => $revealPrice,
+                'current_balance' => $user->wallet_balance,
             ], 402);
         }
 
-        // Révéler l'identité
-        $message->revealIdentity($subscription);
+        // Effectuer la transaction dans une transaction DB
+        try {
+            DB::beginTransaction();
 
-        return response()->json([
-            'message' => 'Identité révélée avec succès.',
-            'sender' => $message->fresh()->sender_info,
-        ]);
+            // Débiter le wallet de l'utilisateur
+            $balanceBefore = $user->wallet_balance;
+            $user->wallet_balance -= $revealPrice;
+            $user->save();
+
+            // Créer la transaction wallet
+            WalletTransaction::create([
+                'user_id' => $user->id,
+                'type' => WalletTransaction::TYPE_DEBIT,
+                'amount' => $revealPrice,
+                'balance_before' => $balanceBefore,
+                'balance_after' => $user->wallet_balance,
+                'description' => 'Révélation d\'identité d\'un message anonyme',
+                'reference' => 'REVEAL_' . $message->id . '_' . time(),
+                'transactionable_type' => AnonymousMessage::class,
+                'transactionable_id' => $message->id,
+            ]);
+
+            // Révéler l'identité
+            $message->revealIdentity();
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Identité révélée avec succès.',
+                'sender' => $message->fresh()->sender_info,
+                'new_balance' => $user->wallet_balance,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Erreur lors de la révélation d\'identité: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Une erreur est survenue lors de la révélation de l\'identité.',
+            ], 500);
+        }
     }
 
     /**

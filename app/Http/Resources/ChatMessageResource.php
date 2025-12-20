@@ -31,14 +31,21 @@ class ChatMessageResource extends JsonResource
             ],
             
             // Si c'est un message cadeau
-            'gift' => $this->when($this->type === 'gift' && $this->relationLoaded('giftTransaction'), function () {
+            'gift_data' => $this->when($this->type === 'gift' && $this->relationLoaded('giftTransaction'), function () {
+                $gift = $this->giftTransaction?->gift;
                 return [
-                    'id' => $this->giftTransaction?->gift?->id,
-                    'name' => $this->giftTransaction?->gift?->name,
-                    'icon' => $this->giftTransaction?->gift?->icon,
-                    'animation' => $this->giftTransaction?->gift?->animation,
-                    'tier' => $this->giftTransaction?->gift?->tier,
+                    'id' => $gift?->id,
+                    'name' => $gift?->name,
+                    'icon' => $gift?->icon,
+                    'animation' => $gift?->animation,
+                    'price' => $gift?->price,
+                    'formatted_price' => $gift?->formatted_price,
+                    'tier' => $gift?->tier,
+                    'tier_color' => $gift?->tier_color,
+                    'background_color' => $gift?->background_color,
+                    'description' => $gift?->description,
                     'amount' => $this->giftTransaction?->amount,
+                    'is_anonymous' => $this->giftTransaction?->is_anonymous ?? false,
                 ];
             }),
 

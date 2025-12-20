@@ -38,6 +38,7 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::get('/analytics', [AdminWebController::class, 'analytics'])->name('admin.analytics');
     Route::get('/revenue', [AdminWebController::class, 'revenue'])->name('admin.revenue');
     Route::get('/settings', [AdminWebController::class, 'settings'])->name('admin.settings');
+    Route::put('/settings', [AdminWebController::class, 'updateSettings'])->name('admin.settings.update');
 
     // Profile
     Route::get('/profile', [AdminWebController::class, 'profile'])->name('admin.profile');
@@ -72,6 +73,12 @@ Route::prefix('admin')->middleware('auth')->group(function () {
 
         // Clear cache
         Route::post('/clear-cache', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'clearCache'])->name('clear-cache');
+    });
+
+    // Payment Configuration
+    Route::prefix('payment-config')->name('admin.payment-config.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\PaymentConfigController::class, 'index'])->name('index');
+        Route::put('/update', [\App\Http\Controllers\Admin\PaymentConfigController::class, 'update'])->name('update');
     });
 
     // Team Management (admins & moderators)
@@ -115,6 +122,15 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::prefix('payments')->group(function () {
         Route::get('/', [AdminWebController::class, 'payments'])->name('admin.payments.index');
         Route::get('/{payment}', [AdminWebController::class, 'showPayment'])->name('admin.payments.show');
+    });
+
+    // Transactions (with CinetPay withdrawal validation)
+    Route::prefix('transactions')->name('admin.transactions.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\TransactionController::class, 'index'])->name('index');
+        Route::get('/withdrawals/pending', [\App\Http\Controllers\Admin\TransactionController::class, 'pendingWithdrawals'])->name('withdrawals.pending');
+        Route::get('/{transaction}', [\App\Http\Controllers\Admin\TransactionController::class, 'show'])->name('show');
+        Route::post('/{transaction}/approve', [\App\Http\Controllers\Admin\TransactionController::class, 'approve'])->name('approve');
+        Route::post('/{transaction}/reject', [\App\Http\Controllers\Admin\TransactionController::class, 'reject'])->name('reject');
     });
 
     // Messages

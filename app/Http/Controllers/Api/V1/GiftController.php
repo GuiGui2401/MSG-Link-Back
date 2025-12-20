@@ -14,6 +14,7 @@ use App\Models\Conversation;
 use App\Models\ChatMessage;
 use App\Models\User;
 use App\Events\GiftSent;
+use App\Events\ChatMessageSent;
 use App\Services\NotificationService;
 use App\Services\Payment\PaymentServiceInterface;
 use Illuminate\Http\JsonResponse;
@@ -144,7 +145,7 @@ class GiftController extends Controller
     }
 
     /**
-     * Envoyer un cadeau (initie le paiement)
+     * Envoyer un cadeau (paiement par wallet)
      */
     public function send(SendGiftRequest $request): JsonResponse
     {
@@ -178,51 +179,88 @@ class GiftController extends Controller
             ], 422);
         }
 
+        // Vérifier le solde du wallet
+        if (!$user->hasEnoughBalance($gift->price)) {
+            return response()->json([
+                'message' => 'Solde insuffisant. Veuillez recharger votre wallet.',
+                'required_amount' => $gift->price,
+                'current_balance' => $user->wallet_balance,
+            ], 422);
+        }
+
         // Obtenir ou créer la conversation
         $conversation = $user->getOrCreateConversationWith($recipient);
 
         // Calculer les montants
         $amounts = GiftTransaction::calculateAmounts($gift->price);
 
-        // Créer la transaction en attente
-        $transaction = GiftTransaction::create([
-            'gift_id' => $gift->id,
-            'sender_id' => $user->id,
-            'recipient_id' => $recipient->id,
-            'conversation_id' => $conversation->id,
-            'amount' => $amounts['amount'],
-            'platform_fee' => $amounts['platform_fee'],
-            'net_amount' => $amounts['net_amount'],
-            'status' => GiftTransaction::STATUS_PENDING,
-            'message' => $validated['message'] ?? null,
-        ]);
-
-        // Initier le paiement
         try {
-            $paymentResult = $this->paymentService->initiatePayment([
-                'amount' => $gift->price,
-                'currency' => 'XAF',
-                'description' => "Cadeau: {$gift->name}",
-                'reference' => "GIFT-{$transaction->id}",
-                'user' => $user,
-                'metadata' => [
-                    'type' => 'gift',
-                    'transaction_id' => $transaction->id,
-                ],
+            DB::beginTransaction();
+
+            // Débiter le wallet de l'expéditeur
+            $user->debitWallet(
+                $gift->price,
+                "Envoi cadeau : {$gift->name}",
+                null
+            );
+
+            // Créer la transaction complétée
+            $transaction = GiftTransaction::create([
+                'gift_id' => $gift->id,
+                'sender_id' => $user->id,
+                'recipient_id' => $recipient->id,
+                'conversation_id' => $conversation->id,
+                'amount' => $amounts['amount'],
+                'platform_fee' => $amounts['platform_fee'],
+                'net_amount' => $amounts['net_amount'],
+                'status' => GiftTransaction::STATUS_COMPLETED,
+                'message' => $validated['message'] ?? null,
+                'is_anonymous' => $validated['is_anonymous'] ?? false,
             ]);
 
-            $transaction->update(['payment_reference' => $paymentResult['reference']]);
+            // Créditer le wallet du destinataire
+            $recipient->creditWallet(
+                $amounts['net_amount'],
+                "Cadeau reçu : {$gift->name}",
+                $transaction
+            );
+
+            // Créer le message de cadeau dans la conversation
+            $chatMessage = ChatMessage::createGiftMessage(
+                $conversation,
+                $user,
+                $transaction,
+                $validated['message'] ?? null
+            );
+
+            // Mettre à jour la conversation
+            $conversation->updateAfterMessage();
+
+            DB::commit();
+
+            // Diffuser les événements
+            try {
+                event(new GiftSent($transaction));
+
+                // Diffuser le message dans la conversation via WebSocket
+                $chatMessage->load(['sender', 'giftTransaction.gift']);
+                event(new ChatMessageSent($chatMessage));
+            } catch (\Exception $e) {
+                \Log::warning('Broadcasting failed for gift: ' . $e->getMessage());
+            }
+
+            // Notification
+            $this->notificationService->sendGiftNotification($transaction);
 
             return response()->json([
-                'message' => 'Paiement initié.',
-                'transaction_id' => $transaction->id,
-                'payment' => $paymentResult,
+                'message' => 'Cadeau envoyé avec succès.',
+                'transaction' => new GiftTransactionResource($transaction->fresh(['gift', 'recipient', 'sender'])),
             ]);
         } catch (\Exception $e) {
-            $transaction->markAsFailed();
+            DB::rollBack();
 
             return response()->json([
-                'message' => 'Erreur lors de l\'initiation du paiement.',
+                'message' => 'Erreur lors de l\'envoi du cadeau.',
                 'error' => $e->getMessage(),
             ], 500);
         }
@@ -257,7 +295,12 @@ class GiftController extends Controller
             $transaction->conversation->updateAfterMessage();
 
             // Diffuser les événements
-            event(new GiftSent($transaction));
+            try {
+                event(new GiftSent($transaction));
+            } catch (\Exception $e) {
+                // Log l'erreur mais ne bloque pas l'envoi du cadeau
+                \Log::warning('Broadcasting failed for gift: ' . $e->getMessage());
+            }
 
             // Notification
             $this->notificationService->sendGiftNotification($transaction);
@@ -270,7 +313,7 @@ class GiftController extends Controller
     }
 
     /**
-     * Envoyer un cadeau dans une conversation existante
+     * Envoyer un cadeau dans une conversation existante (paiement par wallet)
      */
     public function sendInConversation(SendGiftRequest $request, Conversation $conversation): JsonResponse
     {
@@ -286,48 +329,85 @@ class GiftController extends Controller
         $gift = Gift::where('id', $validated['gift_id'])->active()->firstOrFail();
         $recipient = $conversation->getOtherParticipant($user);
 
+        // Vérifier le solde du wallet
+        if (!$user->hasEnoughBalance($gift->price)) {
+            return response()->json([
+                'message' => 'Solde insuffisant. Veuillez recharger votre wallet.',
+                'required_amount' => $gift->price,
+                'current_balance' => $user->wallet_balance,
+            ], 422);
+        }
+
         // Calculer les montants
         $amounts = GiftTransaction::calculateAmounts($gift->price);
 
-        // Créer la transaction
-        $transaction = GiftTransaction::create([
-            'gift_id' => $gift->id,
-            'sender_id' => $user->id,
-            'recipient_id' => $recipient->id,
-            'conversation_id' => $conversation->id,
-            'amount' => $amounts['amount'],
-            'platform_fee' => $amounts['platform_fee'],
-            'net_amount' => $amounts['net_amount'],
-            'status' => GiftTransaction::STATUS_PENDING,
-            'message' => $validated['message'] ?? null,
-        ]);
-
-        // Initier le paiement
         try {
-            $paymentResult = $this->paymentService->initiatePayment([
-                'amount' => $gift->price,
-                'currency' => 'XAF',
-                'description' => "Cadeau: {$gift->name}",
-                'reference' => "GIFT-{$transaction->id}",
-                'user' => $user,
-                'metadata' => [
-                    'type' => 'gift',
-                    'transaction_id' => $transaction->id,
-                ],
+            DB::beginTransaction();
+
+            // Débiter le wallet de l'expéditeur
+            $user->debitWallet(
+                $gift->price,
+                "Envoi cadeau : {$gift->name}",
+                null
+            );
+
+            // Créer la transaction complétée
+            $transaction = GiftTransaction::create([
+                'gift_id' => $gift->id,
+                'sender_id' => $user->id,
+                'recipient_id' => $recipient->id,
+                'conversation_id' => $conversation->id,
+                'amount' => $amounts['amount'],
+                'platform_fee' => $amounts['platform_fee'],
+                'net_amount' => $amounts['net_amount'],
+                'status' => GiftTransaction::STATUS_COMPLETED,
+                'message' => $validated['message'] ?? null,
+                'is_anonymous' => $validated['is_anonymous'] ?? false,
             ]);
 
-            $transaction->update(['payment_reference' => $paymentResult['reference']]);
+            // Créditer le wallet du destinataire
+            $recipient->creditWallet(
+                $amounts['net_amount'],
+                "Cadeau reçu : {$gift->name}",
+                $transaction
+            );
+
+            // Créer le message de cadeau dans la conversation
+            $chatMessage = ChatMessage::createGiftMessage(
+                $conversation,
+                $user,
+                $transaction,
+                $validated['message'] ?? null
+            );
+
+            // Mettre à jour la conversation
+            $conversation->updateAfterMessage();
+
+            DB::commit();
+
+            // Diffuser les événements
+            try {
+                event(new GiftSent($transaction));
+
+                // Diffuser le message dans la conversation via WebSocket
+                $chatMessage->load(['sender', 'giftTransaction.gift']);
+                event(new ChatMessageSent($chatMessage));
+            } catch (\Exception $e) {
+                \Log::warning('Broadcasting failed for gift: ' . $e->getMessage());
+            }
+
+            // Notification
+            $this->notificationService->sendGiftNotification($transaction);
 
             return response()->json([
-                'message' => 'Paiement initié.',
-                'transaction_id' => $transaction->id,
-                'payment' => $paymentResult,
+                'message' => 'Cadeau envoyé avec succès.',
+                'transaction' => new GiftTransactionResource($transaction->fresh(['gift', 'recipient', 'sender'])),
             ]);
         } catch (\Exception $e) {
-            $transaction->markAsFailed();
+            DB::rollBack();
 
             return response()->json([
-                'message' => 'Erreur lors de l\'initiation du paiement.',
+                'message' => 'Erreur lors de l\'envoi du cadeau.',
                 'error' => $e->getMessage(),
             ], 500);
         }

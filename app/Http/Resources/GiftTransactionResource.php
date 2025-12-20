@@ -16,11 +16,21 @@ class GiftTransactionResource extends JsonResource
             'id' => $this->id,
             'gift' => new GiftResource($this->whenLoaded('gift')),
             
-            // Expéditeur
+            // Expéditeur (masqué si anonyme et que l'utilisateur n'est pas l'expéditeur)
             'sender' => $this->when($this->relationLoaded('sender'), function () use ($isSender) {
                 if ($isSender) {
                     return new UserPublicResource($this->sender);
                 }
+
+                // Si le cadeau est anonyme et que l'utilisateur n'est pas l'expéditeur
+                if ($this->is_anonymous) {
+                    return [
+                        'id' => null,
+                        'initial' => 'A',
+                        'username' => 'Anonyme',
+                    ];
+                }
+
                 return [
                     'id' => $this->sender->id,
                     'initial' => $this->sender->initial,
@@ -34,6 +44,7 @@ class GiftTransactionResource extends JsonResource
             'formatted_amount' => $this->formatted_amount,
             'net_amount' => $this->when(!$isSender, $this->net_amount),
             'message' => $this->message,
+            'is_anonymous' => $this->is_anonymous,
             'status' => $this->status,
             
             'conversation_id' => $this->conversation_id,

@@ -14,6 +14,9 @@ use App\Http\Controllers\Api\V1\WalletController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\StoryController;
+use App\Http\Controllers\Api\V1\CinetPayController;
+use App\Http\Controllers\Api\V1\SettingController;
+use App\Http\Controllers\Api\V1\PremiumPassController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\ModerationController;
@@ -58,11 +61,24 @@ Route::prefix('v1')->group(function () {
     // ==================== PREMIUM PRICING ====================
     Route::get('/premium/pricing', [PremiumController::class, 'pricing']);
 
+    // ==================== PREMIUM PASS INFO ====================
+    Route::get('/premium-pass/info', [PremiumPassController::class, 'info']);
+
+    // ==================== PUBLIC SETTINGS ====================
+    Route::get('/settings/public', [SettingController::class, 'getPublicSettings']);
+    Route::get('/settings/reveal-price', [SettingController::class, 'getRevealPrice']);
+
     // ==================== PAYMENT WEBHOOKS (Public) ====================
     Route::prefix('payments')->group(function () {
-        Route::post('/webhook/cinetpay', [PaymentController::class, 'webhookCinetPay']);
         Route::post('/webhook/ligosapp', [PaymentController::class, 'webhookLigosApp']);
         Route::post('/webhook/intouch', [PaymentController::class, 'webhookIntouch']);
+    });
+
+    // ==================== CINETPAY WEBHOOKS (Public) ====================
+    Route::prefix('cinetpay')->group(function () {
+        // CinetPay teste l'URL avec GET avant d'envoyer POST
+        Route::match(['get', 'post'], '/notify', [CinetPayController::class, 'handleNotification']);
+        Route::match(['get', 'post'], '/return', [CinetPayController::class, 'handleReturn']);
     });
 
     // ==================== AUTHENTICATED ROUTES ====================
@@ -181,6 +197,17 @@ Route::prefix('v1')->group(function () {
             Route::get('/check', [PremiumController::class, 'check']);
         });
 
+        // ==================== PREMIUM PASS ====================
+        Route::prefix('premium-pass')->group(function () {
+            Route::get('/status', [PremiumPassController::class, 'status']);
+            Route::post('/purchase', [PremiumPassController::class, 'purchase']);
+            Route::post('/renew', [PremiumPassController::class, 'renew']);
+            Route::post('/auto-renew/enable', [PremiumPassController::class, 'enableAutoRenew']);
+            Route::post('/auto-renew/disable', [PremiumPassController::class, 'disableAutoRenew']);
+            Route::get('/history', [PremiumPassController::class, 'history']);
+            Route::get('/can-view-identity/{userId}', [PremiumPassController::class, 'canViewIdentity']);
+        });
+
         // ==================== WALLET ====================
         Route::prefix('wallet')->group(function () {
             Route::get('/', [WalletController::class, 'index']);
@@ -189,14 +216,24 @@ Route::prefix('v1')->group(function () {
             Route::get('/withdrawal-methods', [WalletController::class, 'withdrawalMethods']);
 
             // Dépôts
-            Route::post('/deposit', [WalletController::class, 'deposit']);
-            Route::get('/deposit/status/{reference}', [WalletController::class, 'checkDepositStatus']);
+            Route::post('/deposit/initiate', [WalletController::class, 'initiateDeposit']);
 
             // Retraits
             Route::post('/withdraw', [WalletController::class, 'withdraw']);
             Route::get('/withdrawals', [WalletController::class, 'withdrawals']);
             Route::get('/withdrawals/{withdrawal}', [WalletController::class, 'showWithdrawal']);
             Route::delete('/withdrawals/{withdrawal}', [WalletController::class, 'cancelWithdrawal']);
+        });
+
+        // ==================== PAYMENT PROVIDERS CONFIG ====================
+        Route::get('/payment-providers/config', [\App\Http\Controllers\Api\V1\PaymentProviderController::class, 'getConfig']);
+
+        // ==================== CINETPAY (Authenticated) ====================
+        Route::prefix('cinetpay')->group(function () {
+            Route::post('/deposit/initiate', [CinetPayController::class, 'initiateDepositPayment']);
+            Route::post('/check-status', [CinetPayController::class, 'checkTransactionStatus']);
+            Route::post('/withdrawal/initiate', [CinetPayController::class, 'initiateWithdrawal']);
+            Route::post('/withdrawal/status', [CinetPayController::class, 'checkWithdrawalStatus']);
         });
 
         // ==================== NOTIFICATIONS ====================
