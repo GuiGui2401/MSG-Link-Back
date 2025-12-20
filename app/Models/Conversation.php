@@ -88,6 +88,14 @@ class Conversation extends Model
         return $this->hasMany(GiftTransaction::class);
     }
 
+    /**
+     * Révélations d'identité dans cette conversation
+     */
+    public function identityReveals(): HasMany
+    {
+        return $this->hasMany(ConversationIdentityReveal::class);
+    }
+
     // ==================== ACCESSORS ====================
 
     /**
@@ -279,5 +287,43 @@ class Conversation extends Model
                 'is_read' => true,
                 'read_at' => now(),
             ]);
+    }
+
+    /**
+     * Vérifier si un utilisateur a révélé l'identité de l'autre participant
+     */
+    public function hasRevealedIdentityFor(User $user, User $otherUser): bool
+    {
+        return $this->identityReveals()
+            ->where('user_id', $user->id)
+            ->where('revealed_user_id', $otherUser->id)
+            ->exists();
+    }
+
+    /**
+     * Vérifier si l'identité est révélée pour cet utilisateur
+     * (soit il a payé dans Chat, soit il est premium, soit il a révélé un message de cette personne)
+     */
+    public function isIdentityRevealedFor(User $user): bool
+    {
+        $otherUser = $this->getOtherParticipant($user);
+
+        // Si l'utilisateur est premium, il voit tout
+        if ($user->is_premium) {
+            return true;
+        }
+
+        // Vérifier si l'utilisateur a payé pour révéler l'identité dans le chat
+        if ($this->hasRevealedIdentityFor($user, $otherUser)) {
+            return true;
+        }
+
+        // Vérifier aussi si un message anonyme de cet utilisateur a été révélé (synchronisation Messages ↔ Chat)
+        $hasRevealedMessage = \App\Models\AnonymousMessage::where('recipient_id', $user->id)
+            ->where('sender_id', $otherUser->id)
+            ->where('is_identity_revealed', true)
+            ->exists();
+
+        return $hasRevealedMessage;
     }
 }

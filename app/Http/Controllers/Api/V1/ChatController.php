@@ -9,10 +9,13 @@ use App\Http\Resources\ChatMessageResource;
 use App\Models\Conversation;
 use App\Models\ChatMessage;
 use App\Models\User;
+use App\Models\ConversationIdentityReveal;
+use App\Models\WalletTransaction;
 use App\Events\ChatMessageSent;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ChatController extends Controller
 {
@@ -304,5 +307,104 @@ class ChatController extends Controller
             'status' => 'online',
             'timestamp' => now()->toIso8601String(),
         ]);
+    }
+
+    /**
+     * Révéler l'identité de l'autre participant dans une conversation
+     */
+    public function revealIdentity(Request $request, Conversation $conversation): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifications
+        if (!$conversation->hasParticipant($user)) {
+            return response()->json([
+                'message' => 'Accès non autorisé.',
+            ], 403);
+        }
+
+        $otherUser = $conversation->getOtherParticipant($user);
+
+        // Vérifier si déjà révélé
+        if ($conversation->hasRevealedIdentityFor($user, $otherUser)) {
+            return response()->json([
+                'message' => 'L\'identité a déjà été révélée.',
+                'other_participant' => [
+                    'id' => $otherUser->id,
+                    'username' => $otherUser->username,
+                    'first_name' => $otherUser->first_name,
+                    'last_name' => $otherUser->last_name,
+                    'avatar' => $otherUser->avatar,
+                    'is_premium' => $otherUser->is_premium,
+                ],
+            ]);
+        }
+
+        // Récupérer le prix de révélation depuis les settings
+        $revealPrice = reveal_anonymous_price();
+
+        // Vérifier si l'utilisateur a un solde suffisant
+        if ($user->wallet_balance < $revealPrice) {
+            return response()->json([
+                'message' => 'Solde insuffisant pour révéler l\'identité.',
+                'requires_payment' => true,
+                'price' => $revealPrice,
+                'current_balance' => $user->wallet_balance,
+            ], 402);
+        }
+
+        // Effectuer la transaction dans une transaction DB
+        try {
+            DB::beginTransaction();
+
+            // Débiter le wallet de l'utilisateur
+            $balanceBefore = $user->wallet_balance;
+            $user->wallet_balance -= $revealPrice;
+            $user->save();
+
+            // Créer la transaction wallet
+            $walletTransaction = WalletTransaction::create([
+                'user_id' => $user->id,
+                'type' => WalletTransaction::TYPE_DEBIT,
+                'amount' => $revealPrice,
+                'balance_before' => $balanceBefore,
+                'balance_after' => $user->wallet_balance,
+                'description' => 'Révélation d\'identité dans une conversation',
+                'reference' => 'REVEAL_CONV_' . $conversation->id . '_' . time(),
+                'transactionable_type' => Conversation::class,
+                'transactionable_id' => $conversation->id,
+            ]);
+
+            // Créer la révélation d'identité
+            ConversationIdentityReveal::create([
+                'conversation_id' => $conversation->id,
+                'user_id' => $user->id,
+                'revealed_user_id' => $otherUser->id,
+                'wallet_transaction_id' => $walletTransaction->id,
+                'revealed_at' => now(),
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Identité révélée avec succès.',
+                'other_participant' => [
+                    'id' => $otherUser->id,
+                    'username' => $otherUser->username,
+                    'first_name' => $otherUser->first_name,
+                    'last_name' => $otherUser->last_name,
+                    'avatar' => $otherUser->avatar,
+                    'is_premium' => $otherUser->is_premium,
+                ],
+                'new_balance' => $user->wallet_balance,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Erreur lors de la révélation d\'identité dans conversation: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Une erreur est survenue lors de la révélation de l\'identité.',
+            ], 500);
+        }
     }
 }

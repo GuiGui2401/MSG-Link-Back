@@ -30,7 +30,15 @@ class UserResource extends JsonResource
             'phone_verified_at' => $this->phone_verified_at?->toIso8601String(),
             'last_seen_at' => $this->last_seen_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),
-            
+
+            // Champs Premium
+            'is_premium' => $this->is_premium ?? false,
+            'premium_started_at' => $this->premium_started_at?->toIso8601String(),
+            'premium_expires_at' => $this->premium_expires_at?->toIso8601String(),
+            'premium_auto_renew' => $this->premium_auto_renew ?? false,
+            'has_active_premium' => $this->has_active_premium ?? false,
+            'premium_days_remaining' => $this->premium_days_remaining,
+
             // Champs admin uniquement
             $this->mergeWhen($request->user()?->is_admin, [
                 'is_banned' => $this->is_banned,

@@ -152,6 +152,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/conversations/{conversation}/messages', [ChatController::class, 'messages']);
             Route::post('/conversations/{conversation}/messages', [ChatController::class, 'sendMessage']);
             Route::post('/conversations/{conversation}/read', [ChatController::class, 'markAsRead']);
+            Route::post('/conversations/{conversation}/reveal', [ChatController::class, 'revealIdentity']);
             Route::post('/conversations/{conversation}/gift', [GiftController::class, 'sendInConversation']);
             Route::delete('/conversations/{conversation}', [ChatController::class, 'destroy']);
             Route::get('/stats', [ChatController::class, 'stats']);
