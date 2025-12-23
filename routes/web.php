@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\AdminWebController;
+use App\Http\Controllers\Admin\LegalPageController;
+use App\Http\Controllers\Admin\MaintenanceController;
 
 /*
 |--------------------------------------------------------------------------
@@ -54,6 +56,9 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::post('/cache/clear', [AdminWebController::class, 'clearCache'])->name('admin.cache.clear');
     Route::post('/cache/config', [AdminWebController::class, 'clearConfigCache'])->name('admin.cache.config');
 
+    // Legal Pages Management
+    Route::resource('legal-pages', LegalPageController::class)->names('admin.legal-pages');
+
     // Service Configuration (WhatsApp, SMS, Payment)
     Route::prefix('service-config')->name('admin.service-config.')->group(function () {
         Route::get('/', [\App\Http\Controllers\Admin\ServiceConfigController::class, 'index'])->name('index');
@@ -79,6 +84,13 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::prefix('payment-config')->name('admin.payment-config.')->group(function () {
         Route::get('/', [\App\Http\Controllers\Admin\PaymentConfigController::class, 'index'])->name('index');
         Route::put('/update', [\App\Http\Controllers\Admin\PaymentConfigController::class, 'update'])->name('update');
+    });
+
+    // Maintenance Mode
+    Route::prefix('maintenance')->name('admin.maintenance.')->group(function () {
+        Route::get('/', [MaintenanceController::class, 'index'])->name('index');
+        Route::post('/toggle', [MaintenanceController::class, 'toggle'])->name('toggle');
+        Route::put('/update', [MaintenanceController::class, 'updateWeb'])->name('update');
     });
 
     // Team Management (admins & moderators)

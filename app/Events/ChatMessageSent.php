@@ -62,6 +62,15 @@ class ChatMessageSent implements ShouldBroadcastNow
             ];
         }
 
+        // Ajouter le message anonyme cité si présent (réponse à un message anonyme)
+        if ($this->message->anonymousMessage) {
+            $data['anonymous_message'] = [
+                'id' => $this->message->anonymousMessage->id,
+                'content' => $this->message->anonymousMessage->content,
+                'created_at' => $this->message->anonymousMessage->created_at->toIso8601String(),
+            ];
+        }
+
         return $data;
     }
 }

@@ -51,7 +51,7 @@ class Group extends Model
      */
     public function creator(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'creator_id');
+        return $this->belongsTo(User::class, 'creator_id')->withoutTrashed();
     }
 
     /**
@@ -203,8 +203,8 @@ class Group extends Model
         // Incrémenter le compteur
         $this->increment('members_count');
 
-        // Message système avec nom anonyme
-        GroupMessage::createSystemMessage($this, "{$member->anonymous_name} a rejoint le groupe");
+        // Message système anonyme
+        GroupMessage::createSystemMessage($this, "Anonyme a rejoint le groupe");
 
         return $member;
     }

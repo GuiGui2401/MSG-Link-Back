@@ -11,24 +11,38 @@ class ChatMessageResource extends JsonResource
     {
         $user = $request->user();
         $isMine = $this->sender_id === $user?->id;
-        
+
         // Vérifier si l'utilisateur a un premium pour cette conversation
         $hasPremium = $this->conversation?->hasPremiumSubscription($user);
-        
+
+        // Si le sender est supprimé, retourner des données par défaut
+        $senderData = null;
+        if ($this->sender) {
+            $senderData = [
+                'id' => $this->sender->id,
+                'initial' => $this->sender->initial,
+                'first_name' => ($isMine || $hasPremium) ? $this->sender->first_name : null,
+                'avatar_url' => ($isMine || $hasPremium) ? $this->sender->avatar_url : null,
+            ];
+        } else {
+            // Sender supprimé - retourner des données anonymes
+            $senderData = [
+                'id' => null,
+                'initial' => '?',
+                'first_name' => null,
+                'avatar_url' => null,
+            ];
+        }
+
         return [
             'id' => $this->id,
             'conversation_id' => $this->conversation_id,
             'content' => $this->content,
             'type' => $this->type,
             'is_mine' => $isMine,
-            
+
             // Expéditeur
-            'sender' => [
-                'id' => $this->sender->id,
-                'initial' => $this->sender->initial,
-                'first_name' => ($isMine || $hasPremium) ? $this->sender->first_name : null,
-                'avatar_url' => ($isMine || $hasPremium) ? $this->sender->avatar_url : null,
-            ],
+            'sender' => $senderData,
             
             // Si c'est un message cadeau
             'gift_data' => $this->when($this->type === 'gift' && $this->relationLoaded('giftTransaction'), function () {

@@ -37,6 +37,11 @@ class StoryController extends Controller
                 return $story->isViewedBy($user);
             });
 
+            // Si l'utilisateur créateur de la story est supprimé, ne pas afficher la story
+            if (!$firstStory->user) {
+                return null;
+            }
+
             // Vérifier si l'utilisateur a payé pour voir l'identité
             $isOwner = $user && $user->id === $firstStory->user_id;
             $hasSubscription = $user && PremiumSubscription::hasActiveForStory($user->id, $firstStory->id);
@@ -69,7 +74,7 @@ class StoryController extends Controller
                 'all_viewed' => $allViewed,
                 'has_new' => !$allViewed,
             ];
-        })->values();
+        })->filter()->values(); // Filtrer les valeurs null
 
         return response()->json([
             'stories' => $storiesByUser,
@@ -83,7 +88,7 @@ class StoryController extends Controller
     {
         $viewer = $request->user();
 
-        $user = User::where('username', $username)->first();
+        $user = User::where('username', $username)->withoutTrashed()->first();
 
         if (!$user) {
             return response()->json([
@@ -109,7 +114,7 @@ class StoryController extends Controller
     {
         $viewer = $request->user();
 
-        $user = User::find($userId);
+        $user = User::withoutTrashed()->find($userId);
 
         if (!$user) {
             return response()->json([

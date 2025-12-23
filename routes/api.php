@@ -17,10 +17,13 @@ use App\Http\Controllers\Api\V1\StoryController;
 use App\Http\Controllers\Api\V1\CinetPayController;
 use App\Http\Controllers\Api\V1\SettingController;
 use App\Http\Controllers\Api\V1\PremiumPassController;
+use App\Http\Controllers\Api\V1\AnonymousMessageRevealController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\ModerationController;
 use App\Http\Controllers\Admin\WithdrawalController as AdminWithdrawalController;
+use App\Http\Controllers\Admin\MaintenanceController;
+use App\Http\Controllers\Api\LegalPageController;
 
 /*
 |--------------------------------------------------------------------------
@@ -64,9 +67,19 @@ Route::prefix('v1')->group(function () {
     // ==================== PREMIUM PASS INFO ====================
     Route::get('/premium-pass/info', [PremiumPassController::class, 'info']);
 
+    // ==================== LEGAL PAGES ====================
+    Route::get('/legal-pages', [LegalPageController::class, 'index']);
+    Route::get('/legal-pages/{slug}', [LegalPageController::class, 'show']);
+
     // ==================== PUBLIC SETTINGS ====================
     Route::get('/settings/public', [SettingController::class, 'getPublicSettings']);
     Route::get('/settings/reveal-price', [SettingController::class, 'getRevealPrice']);
+
+    // ==================== REVEAL IDENTITY PRICE (Public) ====================
+    Route::get('/reveal-identity/price', [AnonymousMessageRevealController::class, 'getRevealPrice']);
+
+    // ==================== MAINTENANCE MODE STATUS (Public) ====================
+    Route::get('/maintenance/status', [MaintenanceController::class, 'getStatus']);
 
     // ==================== PAYMENT WEBHOOKS (Public) ====================
     Route::prefix('payments')->group(function () {
@@ -93,6 +106,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/verify-email', [AuthController::class, 'verifyEmail']);
             Route::post('/resend-email-verification', [AuthController::class, 'resendEmailVerification']);
             Route::post('/verify-phone', [AuthController::class, 'verifyPhone']);
+            Route::put('/update-pin-direct', [AuthController::class, 'updatePinDirect']);
         });
 
         // ==================== USERS ====================
@@ -127,6 +141,12 @@ Route::prefix('v1')->group(function () {
             Route::post('/{message}/start-conversation', [MessageController::class, 'startConversation']);
             Route::post('/{message}/report', [MessageController::class, 'report']);
             Route::delete('/{message}', [MessageController::class, 'destroy']);
+        });
+
+        // ==================== RÉVÉLATION IDENTITÉ ANONYME (PAIEMENT) ====================
+        Route::prefix('reveal-identity')->group(function () {
+            Route::post('/messages/{message}/initiate', [AnonymousMessageRevealController::class, 'initiatePayment']);
+            Route::get('/messages/{message}/status', [AnonymousMessageRevealController::class, 'checkPaymentStatus']);
         });
 
         // ==================== CONFESSIONS ====================
@@ -313,6 +333,11 @@ Route::prefix('v1')->group(function () {
                 Route::get('/{withdrawal}', [AdminWithdrawalController::class, 'show']);
                 Route::post('/{withdrawal}/process', [AdminWithdrawalController::class, 'process']);
                 Route::post('/{withdrawal}/reject', [AdminWithdrawalController::class, 'reject']);
+            });
+
+            // Maintenance Mode
+            Route::prefix('maintenance')->group(function () {
+                Route::put('/update', [MaintenanceController::class, 'update']);
             });
         });
     });

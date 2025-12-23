@@ -43,6 +43,8 @@
     <style>
         [x-cloak] { display: none !important; }
     </style>
+
+    @stack('styles')
 </head>
 <body class="bg-gray-100" x-data="{ sidebarOpen: false }">
     <div class="min-h-screen flex">
@@ -211,10 +213,28 @@
                         Services API
                     </a>
 
+                    <a href="{{ route('admin.legal-pages.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.legal-pages.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-file-contract w-5 mr-3"></i>
+                        Pages Légales
+                    </a>
+
                     <a href="{{ route('admin.payment-config.index') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.payment-config.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
                         <i class="fas fa-money-check-alt w-5 mr-3"></i>
                         Config Paiements
+                    </a>
+
+                    <a href="{{ route('admin.maintenance.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.maintenance.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-tools w-5 mr-3"></i>
+                        Mode Maintenance
+                        @php
+                            $maintenanceEnabled = \App\Models\Setting::get('maintenance_mode_enabled', false);
+                        @endphp
+                        @if($maintenanceEnabled)
+                            <span class="ml-auto bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">ACTIF</span>
+                        @endif
                     </a>
                 </div>
             </nav>

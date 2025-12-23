@@ -12,6 +12,25 @@ class ConversationResource extends JsonResource
         $user = $request->user();
         $otherParticipant = $this->other_participant ?? $this->getOtherParticipant($user);
 
+        // Si l'autre participant est supprimé, retourner des données minimales
+        if (!$otherParticipant) {
+            return [
+                'id' => $this->id,
+                'other_participant' => null,
+                'last_message' => null,
+                'streak' => [
+                    'count' => 0,
+                    'flame_level' => 'none',
+                    'streak_updated_at' => null,
+                ],
+                'identity_revealed' => false,
+                'has_premium' => false,
+                'unread_count' => 0,
+                'last_message_at' => $this->last_message_at?->toIso8601String(),
+                'created_at' => $this->created_at->toIso8601String(),
+            ];
+        }
+
         // Vérifier si l'identité peut être révélée (premium ou payé pour révéler)
         $canViewIdentity = $user->is_premium || $this->isIdentityRevealedFor($user);
 

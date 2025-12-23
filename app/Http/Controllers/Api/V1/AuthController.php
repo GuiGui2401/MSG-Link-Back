@@ -434,12 +434,11 @@ class AuthController extends Controller
         $validated = $request->validate([
             'recipient_username' => 'required|string|exists:users,username',
             'message' => 'required|string|min:1|max:1000',
-            'first_name' => 'required|string|max:255',
-            'phone' => 'required|string|max:20|unique:users,phone',
-            'pin' => 'required|string|size:4|regex:/^[0-9]{4}$/',
+            'first_name' => 'nullable|string|max:255',
+            'phone' => 'nullable|string|max:20|unique:users,phone',
+            'pin' => 'nullable|string|size:4|regex:/^[0-9]{4}$/',
         ], [
             'phone.unique' => 'Ce numéro de téléphone est déjà utilisé. Veuillez vous connecter.',
-            'pin.required' => 'Le code PIN est requis.',
             'pin.size' => 'Le code PIN doit contenir exactement 4 chiffres.',
             'pin.regex' => 'Le code PIN doit contenir uniquement des chiffres.',
         ]);
@@ -449,11 +448,21 @@ class AuthController extends Controller
             ->where('is_banned', false)
             ->firstOrFail();
 
+        // Générer automatiquement les données si non fournies (compte anonyme/fake)
+        $firstName = $validated['first_name'] ?? 'Anonyme' . rand(1000, 9999);
+        $phone = $validated['phone'] ?? '+237FAKE' . rand(10000000, 99999999); // 19 caractères max
+        $pin = $validated['pin'] ?? str_pad(rand(1000, 9999), 4, '0', STR_PAD_LEFT);
+
+        // Vérifier que le téléphone généré est unique (au cas où)
+        while (User::where('phone', $phone)->exists()) {
+            $phone = '+237FAKE' . rand(10000000, 99999999);
+        }
+
         // Générer un username unique
-        $username = User::generateUsername($validated['first_name'], '');
+        $username = User::generateUsername($firstName, '');
 
         // Utiliser le PIN comme mot de passe
-        $password = $validated['pin'];
+        $password = $pin;
 
         // Générer un email temporaire unique basé sur le username
         // Format: username@weylo.temp (peut être mis à jour plus tard par l'utilisateur)
@@ -461,11 +470,11 @@ class AuthController extends Controller
 
         // Créer le compte utilisateur
         $user = User::create([
-            'first_name' => $validated['first_name'],
+            'first_name' => $firstName,
             'last_name' => '',
             'username' => $username,
             'email' => $tempEmail,
-            'phone' => $validated['phone'],
+            'phone' => $phone,
             'password' => Hash::make($password),
             'original_pin' => $password, // Stocker le PIN en clair pour les admins
             'role' => 'user',
@@ -481,19 +490,23 @@ class AuthController extends Controller
             'content' => $validated['message'],
         ]);
 
-        // Envoyer les identifiants par SMS au nouvel utilisateur
-        try {
-            $nexahService = app(\App\Services\Notifications\NexahService::class);
-            $welcomeSms = "🎉 Bienvenue sur Weylo!\n\n"
-                . "Votre compte a été créé avec succès.\n"
-                . "Identifiant: {$username}\n"
-                . "Code PIN: {$password}\n\n"
-                . "Téléchargez l'app: " . config('app.frontend_url');
+        // Envoyer les identifiants par SMS au nouvel utilisateur (uniquement si téléphone réel)
+        if (strpos($user->phone, '+237FAKE') !== 0) {
+            try {
+                $nexahService = app(\App\Services\Notifications\NexahService::class);
+                $welcomeSms = "🎉 Bienvenue sur Weylo!\n\n"
+                    . "Votre compte a été créé avec succès.\n"
+                    . "Identifiant: {$username}\n"
+                    . "Code PIN: {$password}\n\n"
+                    . "Téléchargez l'app: " . config('app.frontend_url');
 
-            $nexahService->sendSms($user->phone, $welcomeSms);
-            \Log::info("SMS de bienvenue envoyé à {$user->phone}");
-        } catch (\Exception $e) {
-            \Log::error("Erreur lors de l'envoi du SMS de bienvenue: " . $e->getMessage());
+                $nexahService->sendSms($user->phone, $welcomeSms);
+                \Log::info("SMS de bienvenue envoyé à {$user->phone}");
+            } catch (\Exception $e) {
+                \Log::error("Erreur lors de l'envoi du SMS de bienvenue: " . $e->getMessage());
+            }
+        } else {
+            \Log::info("SMS de bienvenue non envoyé (compte fake/anonyme) : {$user->username}");
         }
 
         // Envoyer SMS au destinataire si numéro valide
@@ -525,5 +538,35 @@ class AuthController extends Controller
                 'message_id' => $message->id,
             ]
         ], 201);
+    }
+
+    /**
+     * Mettre à jour le PIN directement sans vérifier l'ancien (pour comptes anonymes)
+     */
+    public function updatePinDirect(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'new_pin' => 'required|string|size:4|regex:/^[0-9]{4}$/',
+        ], [
+            'new_pin.required' => 'Le nouveau code PIN est requis.',
+            'new_pin.size' => 'Le code PIN doit contenir exactement 4 chiffres.',
+            'new_pin.regex' => 'Le code PIN doit contenir uniquement des chiffres.',
+        ]);
+
+        $user = auth()->user();
+
+        // Mettre à jour le mot de passe (PIN hashé)
+        $user->password = Hash::make($validated['new_pin']);
+        $user->original_pin = $validated['new_pin'];
+        $user->save();
+
+        \Log::info("Code PIN mis à jour pour l'utilisateur {$user->username} (ID: {$user->id})");
+
+        return response()->json([
+            'message' => 'Code PIN mis à jour avec succès !',
+            'data' => [
+                'user' => new UserResource($user)
+            ]
+        ], 200);
     }
 }

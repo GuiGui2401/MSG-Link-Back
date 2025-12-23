@@ -83,8 +83,8 @@ class GroupController extends Controller
                 'joined_at' => now(),
             ]);
 
-            // Message système de bienvenue avec nom anonyme
-            GroupMessage::createSystemMessage($group, "Groupe créé par {$member->anonymous_name}");
+            // Message système de bienvenue anonyme
+            GroupMessage::createSystemMessage($group, "Groupe créé par Anonyme");
 
             DB::commit();
 
@@ -257,13 +257,32 @@ class GroupController extends Controller
             ], 403);
         }
 
-        $messages = $group->messages()
-            ->orderBy('created_at', 'desc')
-            ->paginate($request->get('per_page', 50));
+        $canSeeIdentity = $user->is_premium ?? false;
 
-        // Ajouter l'info si c'est le message de l'utilisateur
-        $messages->getCollection()->transform(function ($message) use ($user) {
+        // Charger la relation sender si premium
+        $query = $group->messages()->orderBy('created_at', 'desc');
+        if ($canSeeIdentity) {
+            $query->with('sender');
+        }
+
+        $messages = $query->paginate($request->get('per_page', 50));
+
+        // Ajouter l'info si c'est le message de l'utilisateur et les données du sender
+        $messages->getCollection()->transform(function ($message) use ($user, $canSeeIdentity) {
             $message->is_own = $message->sender_id === $user->id;
+
+            // Ajouter les données du sender selon le statut premium
+            if ($canSeeIdentity && $message->sender) {
+                $message->sender_first_name = $message->sender->first_name;
+                $message->sender_last_name = $message->sender->last_name;
+                $message->sender_username = $message->sender->username;
+                $message->sender_avatar_url = $message->sender->avatar_url;
+                $message->sender_initial = $message->sender->initial;
+            } else {
+                $message->sender_name = 'Anonyme';
+                $message->sender_initial = 'A';
+            }
+
             return $message;
         });
 
@@ -309,6 +328,19 @@ class GroupController extends Controller
         $group->updateAfterMessage();
 
         $message->is_own = true;
+
+        // Ajouter les données du sender pour le retour API
+        $canSeeIdentity = $user->is_premium ?? false;
+        if ($canSeeIdentity) {
+            $message->sender_first_name = $user->first_name;
+            $message->sender_last_name = $user->last_name;
+            $message->sender_username = $user->username;
+            $message->sender_avatar_url = $user->avatar_url;
+            $message->sender_initial = $user->initial;
+        } else {
+            $message->sender_name = 'Anonyme';
+            $message->sender_initial = 'A';
+        }
 
         // Diffuser l'événement en temps réel
         try {
@@ -362,21 +394,37 @@ class GroupController extends Controller
             ], 403);
         }
 
+        // Charger la relation user pour révéler l'identité si premium
         $members = $group->activeMembers()
+            ->with('user')
             ->get()
             ->map(function ($member) use ($user) {
-                return [
+                $canSeeIdentity = $user->is_premium ?? false;
+
+                $memberData = [
                     'id' => $member->id,
                     'user_id' => $member->user_id,
                     'role' => $member->role,
                     'joined_at' => $member->joined_at?->toIso8601String(),
                     'is_muted' => $member->is_muted,
                     'is_self' => $member->user_id === $user->id,
-                    // Nom anonyme (ex: Panda56, Licorne42, etc.)
-                    'anonymous_name' => $member->anonymous_name,
-                    // Pas d'infos personnelles exposées (anonymat complet)
-                    'is_identity_revealed' => false, // Premium feature pour révéler l'identité
+                    'is_identity_revealed' => $canSeeIdentity,
                 ];
+
+                // Si premium, révéler l'identité
+                if ($canSeeIdentity && $member->user) {
+                    $memberData['first_name'] = $member->user->first_name;
+                    $memberData['last_name'] = $member->user->last_name;
+                    $memberData['username'] = $member->user->username;
+                    $memberData['avatar_url'] = $member->user->avatar_url;
+                    $memberData['initial'] = $member->user->initial;
+                } else {
+                    // Sinon, anonyme
+                    $memberData['display_name'] = 'Anonyme';
+                    $memberData['initial'] = 'A';
+                }
+
+                return $memberData;
             });
 
         return response()->json([

@@ -45,7 +45,7 @@ class Conversation extends Model
      */
     public function participantOne(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'participant_one_id');
+        return $this->belongsTo(User::class, 'participant_one_id')->withoutTrashed();
     }
 
     /**
@@ -53,7 +53,7 @@ class Conversation extends Model
      */
     public function participantTwo(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'participant_two_id');
+        return $this->belongsTo(User::class, 'participant_two_id')->withoutTrashed();
     }
 
     /**
@@ -169,7 +169,7 @@ class Conversation extends Model
     /**
      * Obtenir l'autre participant
      */
-    public function getOtherParticipant(User $user): User
+    public function getOtherParticipant(User $user): ?User
     {
         return $this->participant_one_id === $user->id
             ? $this->participantTwo
