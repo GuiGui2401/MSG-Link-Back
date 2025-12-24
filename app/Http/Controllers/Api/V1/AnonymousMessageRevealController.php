@@ -185,13 +185,16 @@ class AnonymousMessageRevealController extends Controller
             // Vérifier le statut auprès de Lygos
             $lygosStatus = $this->lygosService->getTransactionStatus($payment->provider_reference);
 
-            Log::info('🔍 [REVEAL] Vérification du statut', [
+            Log::info('🔍 [REVEAL] Vérification du statut - DÉTAILS COMPLETS', [
                 'payment_id' => $payment->id,
                 'order_id' => $payment->provider_reference,
+                'lygos_full_response' => $lygosStatus,
                 'lygos_status' => $lygosStatus['status'] ?? 'unknown',
+                'lygos_status_lowercase' => isset($lygosStatus['status']) ? strtolower($lygosStatus['status']) : 'unknown',
             ]);
 
-            // Si le paiement est réussi
+            // Si le paiement est réussi (selon la doc Lygos: uniquement "success")
+            // Référence: https://github.com/Warano02/lygos - les statuts sont: pending, success, failed
             if (isset($lygosStatus['status']) && strtolower($lygosStatus['status']) === 'success') {
                 DB::beginTransaction();
 
@@ -244,13 +247,36 @@ class AnonymousMessageRevealController extends Controller
                 ], 400);
             }
 
+            // Vérifier si c'est un statut non officiel
+            $currentStatus = strtolower($lygosStatus['status'] ?? 'unknown');
+            $officialStatuses = ['success', 'failed', 'pending'];
+
+            if (!in_array($currentStatus, $officialStatuses) && $currentStatus !== 'unknown') {
+                Log::warning('⚠️ [REVEAL] STATUT LYGOS NON OFFICIEL DÉTECTÉ!', [
+                    'payment_id' => $payment->id,
+                    'order_id' => $payment->provider_reference,
+                    'unofficial_status' => $lygosStatus['status'],
+                    'message' => 'Ce statut ne fait pas partie de la documentation officielle Lygos!',
+                    'official_statuses' => $officialStatuses,
+                    'action' => 'Paiement considéré comme en attente par sécurité',
+                    'documentation' => 'https://github.com/Warano02/lygos',
+                ]);
+            }
+
             // Paiement toujours en attente
+            Log::info('⏳ [REVEAL] Paiement toujours en attente', [
+                'payment_id' => $payment->id,
+                'current_status' => $lygosStatus['status'] ?? 'unknown',
+                'all_data' => $lygosStatus,
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Paiement en cours de traitement.',
                 'data' => [
                     'status' => 'processing',
                     'payment_link' => $payment->metadata['lygos_link'] ?? null,
+                    'lygos_status' => $lygosStatus['status'] ?? null, // Pour debug
                 ],
             ]);
 

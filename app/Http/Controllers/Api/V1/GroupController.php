@@ -177,16 +177,81 @@ class GroupController extends Controller
     }
 
     /**
-     * Rejoindre un groupe via code d'invitation
+     * Découvrir les groupes publics
+     */
+    public function discover(Request $request): JsonResponse
+    {
+        $query = Group::public()
+            ->with(['lastMessage']);
+
+        // Filtrage par recherche
+        if ($request->has('search')) {
+            $query->search($request->get('search'));
+        }
+
+        // Tri
+        $sortBy = $request->get('sort_by', 'recent');
+        if ($sortBy === 'recent') {
+            $query->withRecentActivity();
+        } elseif ($sortBy === 'members') {
+            $query->orderBy('members_count', 'desc');
+        } elseif ($sortBy === 'name') {
+            $query->orderBy('name', 'asc');
+        }
+
+        $groups = $query->paginate($request->get('per_page', 20));
+
+        // Ajouter des infos supplémentaires pour chaque groupe
+        $user = $request->user();
+        $groups->getCollection()->transform(function ($group) use ($user) {
+            $group->is_member = $group->hasMember($user);
+            $group->can_join = !$group->is_member && $group->canAcceptMoreMembers();
+            return $group;
+        });
+
+        return response()->json([
+            'groups' => $groups->items(),
+            'meta' => [
+                'current_page' => $groups->currentPage(),
+                'last_page' => $groups->lastPage(),
+                'per_page' => $groups->perPage(),
+                'total' => $groups->total(),
+            ],
+        ]);
+    }
+
+    /**
+     * Rejoindre un groupe via code d'invitation ou ID (pour les groupes publics)
      */
     public function join(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'invite_code' => 'required|string|size:8',
+            'invite_code' => 'nullable|string|size:8',
+            'group_id' => 'nullable|integer|exists:groups,id',
         ]);
 
+        // On doit avoir soit un code d'invitation, soit un ID de groupe
+        if (empty($validated['invite_code']) && empty($validated['group_id'])) {
+            return response()->json([
+                'message' => 'Vous devez fournir soit un code d\'invitation, soit un ID de groupe.',
+            ], 422);
+        }
+
         $user = $request->user();
-        $group = Group::where('invite_code', $validated['invite_code'])->firstOrFail();
+
+        // Récupérer le groupe selon le paramètre fourni
+        if (!empty($validated['invite_code'])) {
+            $group = Group::where('invite_code', $validated['invite_code'])->firstOrFail();
+        } else {
+            $group = Group::findOrFail($validated['group_id']);
+
+            // Pour rejoindre par ID, le groupe doit être public
+            if (!$group->is_public) {
+                return response()->json([
+                    'message' => 'Ce groupe est privé. Vous devez utiliser un code d\'invitation.',
+                ], 403);
+            }
+        }
 
         // Vérifier si déjà membre
         if ($group->hasMember($user)) {
@@ -210,6 +275,12 @@ class GroupController extends Controller
                 'message' => 'Impossible de rejoindre le groupe.',
             ], 500);
         }
+
+        // Recharger le groupe avec les relations et informations nécessaires
+        $group->load(['lastMessage']);
+        $group->unread_count = $group->unreadCountFor($user);
+        $group->is_creator = $group->isCreator($user);
+        $group->is_admin = $group->isAdmin($user);
 
         return response()->json([
             'message' => 'Vous avez rejoint le groupe avec succès.',

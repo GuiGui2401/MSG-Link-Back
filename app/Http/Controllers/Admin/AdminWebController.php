@@ -294,6 +294,7 @@ class AdminWebController extends Controller
         $paymentSettings = Setting::where('group', 'payment')->get();
         $premiumSettings = Setting::where('group', 'premium')->get();
         $walletSettings = Setting::where('group', 'wallet')->get();
+        $giftsSettings = Setting::where('group', 'gifts')->get();
         $chatSettings = Setting::where('group', 'chat')->get();
         $securitySettings = Setting::where('group', 'security')->get();
         $moderationSettings = Setting::where('group', 'moderation')->get();
@@ -304,6 +305,7 @@ class AdminWebController extends Controller
             'paymentSettings',
             'premiumSettings',
             'walletSettings',
+            'giftsSettings',
             'chatSettings',
             'securitySettings',
             'moderationSettings',

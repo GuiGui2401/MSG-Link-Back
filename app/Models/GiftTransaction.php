@@ -155,7 +155,10 @@ class GiftTransaction extends Model
      */
     public static function calculateAmounts(int $price): array
     {
-        $platformFee = (int) ceil($price * self::PLATFORM_FEE_PERCENT / 100);
+        // Récupérer le pourcentage depuis les settings (5% par défaut)
+        $platformFeePercent = (float) Setting::get('gifts_platform_fee_percent', 5);
+
+        $platformFee = (int) ceil($price * $platformFeePercent / 100);
         $netAmount = $price - $platformFee;
 
         return [

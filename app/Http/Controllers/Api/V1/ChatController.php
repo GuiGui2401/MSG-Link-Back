@@ -198,10 +198,20 @@ class ChatController extends Controller
 
         // Diffuser l'événement en temps réel
         try {
+            \Log::info('📤 [CHAT] Broadcasting ChatMessageSent', [
+                'message_id' => $message->id,
+                'conversation_id' => $conversation->id,
+                'sender_id' => $user->id,
+                'channel' => 'conversation.' . $conversation->id,
+            ]);
+
             broadcast(new ChatMessageSent($message))->toOthers();
+
+            \Log::info('✅ [CHAT] ChatMessageSent broadcasted successfully');
         } catch (\Exception $e) {
             // Log l'erreur mais ne bloque pas l'envoi du message
-            \Log::warning('Broadcasting failed for message: ' . $e->getMessage());
+            \Log::error('❌ [CHAT] Broadcasting failed for message: ' . $e->getMessage());
+            \Log::error($e);
         }
 
         // Notification push si l'autre utilisateur n'est pas en ligne

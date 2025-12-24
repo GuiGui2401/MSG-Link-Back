@@ -156,28 +156,6 @@
                     </div>
                 </div>
 
-                <!-- Password Reset -->
-                <div class="border-t border-gray-200 pt-6">
-                    <h3 class="text-sm font-medium text-gray-700 mb-4">Changer le mot de passe</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label for="password" class="block text-sm font-medium text-gray-700 mb-2">Nouveau mot de passe</label>
-                            <input type="password" name="password" id="password"
-                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 @error('password') border-red-500 @enderror"
-                                   placeholder="Laisser vide pour ne pas changer">
-                            @error('password')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-                        <div>
-                            <label for="password_confirmation" class="block text-sm font-medium text-gray-700 mb-2">Confirmer le mot de passe</label>
-                            <input type="password" name="password_confirmation" id="password_confirmation"
-                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-                                   placeholder="Confirmer le nouveau mot de passe">
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Wallet Balance (Admin only) -->
                 @if(auth()->user()->is_admin)
                 <div class="border-t border-gray-200 pt-6">

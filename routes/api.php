@@ -183,6 +183,7 @@ Route::prefix('v1')->group(function () {
         // ==================== GROUPS ====================
         Route::prefix('groups')->group(function () {
             Route::get('/', [GroupController::class, 'index']);
+            Route::get('/discover', [GroupController::class, 'discover']); // Découvrir les groupes publics
             Route::post('/', [GroupController::class, 'store']);
             Route::post('/join', [GroupController::class, 'join']);
             Route::get('/stats', [GroupController::class, 'stats']);

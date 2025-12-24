@@ -20,6 +20,13 @@ class ChatMessageSent implements ShouldBroadcastNow
     public function __construct(ChatMessage $message)
     {
         $this->message = $message;
+
+        \Log::info('🔊 [EVENT] ChatMessageSent créé', [
+            'message_id' => $message->id,
+            'conversation_id' => $message->conversation_id,
+            'sender_id' => $message->sender_id,
+            'type' => $message->type,
+        ]);
     }
 
     public function broadcastOn(): array

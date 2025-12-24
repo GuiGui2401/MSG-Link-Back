@@ -210,7 +210,7 @@ class StoryController extends Controller
 
         $validator = Validator::make($request->all(), [
             'type' => 'required|in:image,text',
-            'media' => 'required_if:type,image|file|max:51200', // 50MB max
+            'media' => 'required_if:type,image|file|max:2048', // 2MB max (frontend compresse à 1MB)
             'content' => 'required_if:type,text|string|max:500',
             'background_color' => 'nullable|string|max:7', // Format hex: #RRGGBB
             'duration' => 'nullable|integer|min:3|max:30', // 3 à 30 secondes

@@ -49,7 +49,9 @@ class LygosService
             $response = Http::withHeaders([
                 'api-key' => $this->apiKey,
                 'Content-Type' => 'application/json',
-            ])->post("{$this->baseUrl}/gateway", [
+            ])
+            ->timeout(15) // Timeout de 15 secondes pour l'initialisation
+            ->post("{$this->baseUrl}/gateway", [
                 'track_id' => $trackId,
                 'shop_name' => $this->shopName,
                 'amount' => $amount,
@@ -103,7 +105,10 @@ class LygosService
 
             $response = Http::withHeaders([
                 'api-key' => $this->apiKey,
-            ])->get("{$this->baseUrl}/gateway/payin/{$orderId}");
+            ])
+            ->timeout(10) // Timeout de 10 secondes pour éviter les longues attentes
+            ->retry(2, 100) // Retry 2 fois avec 100ms entre chaque tentative
+            ->get("{$this->baseUrl}/gateway/payin/{$orderId}");
 
             if ($response->failed()) {
                 Log::error('❌ [LYGOS] Échec vérification statut', [
@@ -122,6 +127,14 @@ class LygosService
             ]);
 
             return $data;
+
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('❌ [LYGOS] Timeout ou erreur de connexion lors de la vérification', [
+                'order_id' => $orderId,
+                'message' => $e->getMessage(),
+            ]);
+
+            throw new \Exception('TRANSACTION_NOT_FOUND');
 
         } catch (\Exception $e) {
             Log::error('❌ [LYGOS] Exception lors de la vérification', [

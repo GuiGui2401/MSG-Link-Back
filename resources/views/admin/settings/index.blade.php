@@ -36,6 +36,11 @@
                             class="whitespace-nowrap py-4 px-6 border-b-2 font-medium text-sm transition-colors">
                         <i class="fas fa-wallet mr-2"></i>Portefeuille
                     </button>
+                    <button type="button" @click="activeTab = 'gifts'"
+                            :class="activeTab === 'gifts' ? 'border-pink-500 text-pink-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                            class="whitespace-nowrap py-4 px-6 border-b-2 font-medium text-sm transition-colors">
+                        <i class="fas fa-gift mr-2"></i>Cadeaux
+                    </button>
                     <button type="button" @click="activeTab = 'security'"
                             :class="activeTab === 'security' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
                             class="whitespace-nowrap py-4 px-6 border-b-2 font-medium text-sm transition-colors">
@@ -148,6 +153,38 @@
                         <p class="text-sm text-green-700">
                             <i class="fas fa-wallet mr-2"></i>
                             Paramètres liés au portefeuille et aux retraits des utilisateurs.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Gifts Settings -->
+                <div x-show="activeTab === 'gifts'" x-cloak>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        @foreach($giftsSettings as $setting)
+                            @if($setting->key === 'gifts_platform_fee_percent')
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    {{ $setting->description }}
+                                </label>
+                                <div class="relative">
+                                    <input type="{{ $setting->type === 'integer' || $setting->type === 'decimal' ? 'number' : 'text' }}"
+                                           name="{{ $setting->key }}"
+                                           value="{{ old($setting->key, $setting->value) }}"
+                                           step="{{ $setting->type === 'decimal' ? '0.01' : '1' }}"
+                                           min="0"
+                                           max="100"
+                                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-colors"
+                                           placeholder="Entrez le pourcentage de commission">
+                                    <span class="absolute right-3 top-2.5 text-gray-500 text-sm">%</span>
+                                </div>
+                            </div>
+                            @endif
+                        @endforeach
+                    </div>
+                    <div class="mt-4 p-4 bg-pink-50 border-l-4 border-pink-400 rounded">
+                        <p class="text-sm text-pink-700">
+                            <i class="fas fa-gift mr-2"></i>
+                            Configuration de la commission de la plateforme sur les cadeaux virtuels.
                         </p>
                     </div>
                 </div>
