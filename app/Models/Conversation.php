@@ -202,8 +202,8 @@ class Conversation extends Model
     {
         $now = now();
 
-        // Si pas de streak précédent ou streak expiré (plus de 24h sans message)
-        if (!$this->streak_updated_at || $this->streak_updated_at->diffInHours($now) > 24) {
+        // Si pas de streak précédent, initialiser
+        if (!$this->streak_updated_at) {
             // Vérifier si les deux participants ont envoyé un message aujourd'hui
             $todayStart = $now->copy()->startOfDay();
 
@@ -222,6 +222,53 @@ class Conversation extends Model
                 $this->update([
                     'streak_updated_at' => $now,
                     'flame_level' => $this->calculateFlameLevel($this->streak_count + 1),
+                ]);
+            }
+            return;
+        }
+
+        // Calculer le nombre d'heures depuis la dernière mise à jour
+        $hoursSinceUpdate = $this->streak_updated_at->diffInHours($now);
+
+        // Si plus de 24h depuis la dernière mise à jour
+        if ($hoursSinceUpdate > 24) {
+            // Calculer combien de jours se sont écoulés
+            $daysMissed = floor($hoursSinceUpdate / 24);
+
+            // Vérifier si les deux participants ont envoyé un message aujourd'hui
+            $todayStart = $now->copy()->startOfDay();
+
+            $participantOneMessaged = $this->messages()
+                ->where('sender_id', $this->participant_one_id)
+                ->where('created_at', '>=', $todayStart)
+                ->exists();
+
+            $participantTwoMessaged = $this->messages()
+                ->where('sender_id', $this->participant_two_id)
+                ->where('created_at', '>=', $todayStart)
+                ->exists();
+
+            // Si les deux ont messagé aujourd'hui, on incrémente
+            if ($participantOneMessaged && $participantTwoMessaged) {
+                // Décrémenter d'abord pour les jours manqués (sauf aujourd'hui)
+                $newStreakCount = max(0, $this->streak_count - ($daysMissed - 1));
+
+                // Puis incrémenter pour aujourd'hui
+                $newStreakCount++;
+
+                $this->update([
+                    'streak_count' => $newStreakCount,
+                    'streak_updated_at' => $now,
+                    'flame_level' => $this->calculateFlameLevel($newStreakCount),
+                ]);
+            } else {
+                // Aucun des deux n'a messagé aujourd'hui, décrémenter pour tous les jours manqués
+                $newStreakCount = max(0, $this->streak_count - $daysMissed);
+
+                $this->update([
+                    'streak_count' => $newStreakCount,
+                    'streak_updated_at' => $now,
+                    'flame_level' => $this->calculateFlameLevel($newStreakCount),
                 ]);
             }
         }

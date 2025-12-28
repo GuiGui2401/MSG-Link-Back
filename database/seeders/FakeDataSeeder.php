@@ -15,6 +15,10 @@ use App\Models\Withdrawal;
 use App\Models\WalletTransaction;
 use App\Models\Report;
 use App\Models\Notification;
+use App\Models\Story;
+use App\Models\Group;
+use App\Models\GroupMember;
+use App\Models\GroupMessage;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -30,11 +34,17 @@ class FakeDataSeeder extends Seeder
         $this->command->info('Creating fake users...');
         $users = $this->createUsers();
 
+        $this->command->info('Creating stories (24h expiration)...');
+        $this->createStories($users);
+
         $this->command->info('Creating anonymous messages...');
         $this->createAnonymousMessages($users);
 
         $this->command->info('Creating confessions...');
         $this->createConfessions($users);
+
+        $this->command->info('Creating groups...');
+        $this->createGroups($users);
 
         $this->command->info('Creating conversations and chat messages...');
         $conversations = $this->createConversations($users);
@@ -99,8 +109,8 @@ class FakeDataSeeder extends Seeder
             null,
         ];
 
-        // Créer 50 utilisateurs normaux
-        for ($i = 0; $i < 50; $i++) {
+        // Créer 100 utilisateurs normaux
+        for ($i = 0; $i < 100; $i++) {
             $firstName = $firstNames[array_rand($firstNames)];
             $lastName = $lastNames[array_rand($lastNames)];
             $createdAt = Carbon::now()->subDays(rand(1, 90));
@@ -157,6 +167,238 @@ class FakeDataSeeder extends Seeder
         }
 
         return $users;
+    }
+
+    /**
+     * Create stories (24 hour expiration)
+     */
+    private function createStories(array $users): void
+    {
+        $storyTexts = [
+            'Bonne journée à tous ! ☀️',
+            'En train de travailler sur un nouveau projet 💻',
+            'Belle vue aujourd\'hui 🌅',
+            'Moment de détente ☕',
+            'Pensée du jour : Crois en toi !',
+            'Nouvelle aventure commence 🚀',
+            'Profitez de chaque instant ✨',
+            'La vie est belle ! 🌟',
+            'Merci pour tout le soutien 🙏',
+            'Nouveau défi accepté 💪',
+            'Inspiration du matin 🌄',
+            'Mode créatif activé 🎨',
+            'Gratitude pour cette journée 💫',
+            'Toujours positif ! 😊',
+            'En route vers mes objectifs 🎯',
+            'Moments précieux à partager ❤️',
+            'L\'aventure continue ! 🌍',
+            'Restez motivés ! 🔥',
+            'Petit bonheur du jour 🌸',
+            'Merci la vie ! 🌈',
+        ];
+
+        $backgroundColors = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
+            '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B500', '#52BE80',
+            '#EC7063', '#5DADE2', '#F4D03F', '#AF7AC5', '#48C9B0',
+        ];
+
+        // Create 100 stories with varying expiration times within 24 hours
+        for ($i = 0; $i < 100; $i++) {
+            $user = $users[array_rand($users)];
+            $type = ['text', 'text', 'text', 'image'][rand(0, 3)]; // More text stories for testing
+
+            // Create stories with different ages (from 1 minute ago to 23 hours ago)
+            $createdAt = Carbon::now()->subMinutes(rand(1, 1380)); // 0-23 hours ago
+            $expiresAt = $createdAt->copy()->addHours(24); // 24 hours from creation
+
+            // Determine if story is still active or expired
+            $status = $expiresAt->isFuture() ? 'active' : 'expired';
+
+            $storyData = [
+                'user_id' => $user->id,
+                'type' => $type,
+                'views_count' => rand(0, 200),
+                'status' => $status,
+                'expires_at' => $expiresAt,
+                'created_at' => $createdAt,
+                'updated_at' => $createdAt,
+            ];
+
+            if ($type === 'text') {
+                $storyData['content'] = $storyTexts[array_rand($storyTexts)];
+                $storyData['background_color'] = $backgroundColors[array_rand($backgroundColors)];
+                $storyData['duration'] = 5; // 5 seconds display
+            } else {
+                // For image stories (you can add actual images later)
+                $storyData['media_url'] = null; // Or use placeholder: 'stories/placeholder.jpg'
+                $storyData['duration'] = 5;
+            }
+
+            $story = \App\Models\Story::create($storyData);
+
+            // Add some story views
+            if ($story->views_count > 0) {
+                $viewersCount = min($story->views_count, count($users) - 1);
+                $viewers = array_slice($users, 0, $viewersCount);
+
+                foreach ($viewers as $viewer) {
+                    if ($viewer->id !== $user->id && rand(0, 100) < 60) { // 60% chance to add view
+                        $story->viewedBy()->attach($viewer->id, [
+                            'created_at' => $createdAt->copy()->addMinutes(rand(1, 60)),
+                            'updated_at' => $createdAt->copy()->addMinutes(rand(1, 60)),
+                        ]);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Create groups with members and messages
+     */
+    private function createGroups(array $users): void
+    {
+        $groupNames = [
+            'Tech Lovers', 'Foodies United', 'Travel Buddies', 'Music Fans',
+            'Book Club', 'Fitness Gang', 'Movie Night', 'Game Zone',
+            'Art Collective', 'Entrepreneurs Hub', 'Study Group', 'Sports Talk',
+            'Photography Club', 'Cooking Masters', 'Fashion Squad', 'Coding Warriors',
+            'Dance Crew', 'Writers Circle', 'Yoga & Wellness', 'Pet Lovers',
+            'Crypto Traders', 'Startup Ideas', 'Language Exchange', 'DIY Projects',
+            'Anime Fans', 'Comedy Central', 'Science Geeks', 'History Buffs',
+            'Green Living', 'Investment Club', 'Podcast Lovers', 'Chess Players',
+            'Coffee Addicts', 'Night Owls', 'Early Birds', 'Memes Factory',
+            'Debate Club', 'Horror Fans', 'Motivation Squad', 'Road Trippers',
+            'Beach Lovers', 'Mountain Hikers', 'City Explorers', 'Food Delivery',
+            'Weekend Warriors', 'Study Partners', 'Career Growth', 'Self Improvement',
+            'Mental Health', 'Positive Vibes',
+        ];
+
+        $groupDescriptions = [
+            'Un groupe pour discuter et partager',
+            'Rejoignez-nous pour des discussions intéressantes',
+            'Communauté active et bienveillante',
+            'Partagez vos passions avec nous',
+            'Ensemble, c\'est mieux !',
+            'Bienvenue dans notre communauté',
+            null,
+            null,
+        ];
+
+        $groupMessages = [
+            'Salut tout le monde ! 👋',
+            'Bienvenue aux nouveaux membres !',
+            'Quelqu\'un ici ?',
+            'Super groupe ! 😊',
+            'J\'adore cette communauté',
+            'Qui est actif ce soir ?',
+            'Des idées pour ce weekend ?',
+            'Merci pour le partage !',
+            'Très intéressant !',
+            'Je suis d\'accord 👍',
+            'Quelqu\'un a essayé ?',
+            'Excellente question',
+            'Voici mon avis...',
+            'Ça me rappelle quelque chose',
+            'Trop cool ! 🔥',
+            'Haha ! 😂',
+            'Vraiment ?',
+            'Je ne savais pas',
+            'Merci de l\'info',
+            'À bientôt !',
+        ];
+
+        // Create 50 groups
+        for ($i = 0; $i < 50; $i++) {
+            $creator = $users[array_rand($users)];
+            $createdAt = Carbon::now()->subDays(rand(1, 180));
+
+            $group = \App\Models\Group::create([
+                'name' => $groupNames[$i % count($groupNames)] . ($i >= count($groupNames) ? ' ' . ($i + 1) : ''),
+                'description' => $groupDescriptions[array_rand($groupDescriptions)],
+                'creator_id' => $creator->id,
+                'invite_code' => \App\Models\Group::generateInviteCode(),
+                'is_public' => rand(0, 10) > 3, // 70% public
+                'max_members' => rand(0, 10) > 7 ? \App\Models\Group::MAX_MEMBERS_PREMIUM : \App\Models\Group::MAX_MEMBERS_DEFAULT,
+                'members_count' => 0, // Will be updated as we add members
+                'messages_count' => 0, // Will be updated as we add messages
+                'last_message_at' => null,
+                'avatar_url' => null,
+                'created_at' => $createdAt,
+                'updated_at' => $createdAt,
+            ]);
+
+            // Add creator as admin
+            \App\Models\GroupMember::create([
+                'group_id' => $group->id,
+                'user_id' => $creator->id,
+                'role' => \App\Models\GroupMember::ROLE_ADMIN,
+                'joined_at' => $createdAt,
+                'last_read_at' => Carbon::now(),
+                'is_muted' => false,
+            ]);
+            $group->increment('members_count');
+
+            // Add random members (5 to 30 members per group)
+            $memberCount = rand(5, 30);
+            $memberCount = min($memberCount, $group->max_members - 1, count($users) - 1);
+
+            $shuffledUsers = $users;
+            shuffle($shuffledUsers);
+            $addedMembers = 0;
+
+            foreach ($shuffledUsers as $user) {
+                if ($addedMembers >= $memberCount) break;
+                if ($user->id === $creator->id) continue;
+
+                $joinedAt = $createdAt->copy()->addDays(rand(0, 30));
+
+                // Determine role (10% moderator, 90% regular member)
+                $role = rand(0, 10) > 9 ? \App\Models\GroupMember::ROLE_MODERATOR : \App\Models\GroupMember::ROLE_MEMBER;
+
+                \App\Models\GroupMember::create([
+                    'group_id' => $group->id,
+                    'user_id' => $user->id,
+                    'role' => $role,
+                    'joined_at' => $joinedAt,
+                    'last_read_at' => Carbon::now()->subHours(rand(0, 48)),
+                    'is_muted' => rand(0, 10) > 9, // 10% muted
+                ]);
+                $group->increment('members_count');
+                $addedMembers++;
+            }
+
+            // Create messages in the group (10 to 100 messages per group)
+            $messageCount = rand(10, 100);
+            $groupMembers = \App\Models\GroupMember::where('group_id', $group->id)->get();
+
+            $messageTime = $createdAt->copy()->addHours(rand(1, 24));
+
+            for ($j = 0; $j < $messageCount; $j++) {
+                $sender = $groupMembers->random();
+                $messageTime = $messageTime->copy()->addMinutes(rand(5, 300));
+
+                if ($messageTime > Carbon::now()) {
+                    break;
+                }
+
+                \App\Models\GroupMessage::create([
+                    'group_id' => $group->id,
+                    'sender_id' => $sender->user_id,
+                    'content' => $groupMessages[array_rand($groupMessages)],
+                    'type' => \App\Models\GroupMessage::TYPE_TEXT,
+                    'reply_to_message_id' => null,
+                    'created_at' => $messageTime,
+                    'updated_at' => $messageTime,
+                ]);
+
+                $group->increment('messages_count');
+                $group->update(['last_message_at' => $messageTime]);
+            }
+
+            $group->refresh();
+        }
     }
 
     /**
@@ -238,7 +480,8 @@ class FakeDataSeeder extends Seeder
 
         $statuses = ['pending', 'approved', 'approved', 'approved', 'rejected'];
 
-        for ($i = 0; $i < 80; $i++) {
+        // Create 250 confessions (many confessions as requested)
+        for ($i = 0; $i < 250; $i++) {
             $author = $users[array_rand($users)];
             $recipient = rand(0, 10) > 3 ? $users[array_rand($users)] : null;
 

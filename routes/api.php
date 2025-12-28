@@ -147,6 +147,9 @@ Route::prefix('v1')->group(function () {
         Route::prefix('reveal-identity')->group(function () {
             Route::post('/messages/{message}/initiate', [AnonymousMessageRevealController::class, 'initiatePayment']);
             Route::get('/messages/{message}/status', [AnonymousMessageRevealController::class, 'checkPaymentStatus']);
+
+            Route::post('/conversations/{conversation}/initiate', [ChatController::class, 'initiateRevealPayment']);
+            Route::get('/conversations/{conversation}/status', [ChatController::class, 'checkRevealPaymentStatus']);
         });
 
         // ==================== CONFESSIONS ====================

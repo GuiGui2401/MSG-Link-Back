@@ -30,9 +30,9 @@ Schedule::command('subscriptions:check-expired')
     ->withoutOverlapping()
     ->runInBackground();
 
-// Calculer les streaks de conversation tous les jours à minuit
+// Calculer les streaks de conversation toutes les heures pour décrémentation progressive
 Schedule::command('chat:calculate-streaks')
-    ->dailyAt('00:00')
+    ->hourly()
     ->withoutOverlapping()
     ->runInBackground();
 
