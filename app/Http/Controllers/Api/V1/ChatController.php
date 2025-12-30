@@ -453,8 +453,15 @@ class ChatController extends Controller
         $price = Setting::get('reveal_anonymous_price', 1000);
 
         // Valider les données de paiement
+        // Validation flexible pour accepter différents formats de numéros internationaux
+        // Format attendu: code pays (3-4 chiffres) + numéro local (6-10 chiffres)
+        // Exemples: 237651234567 (Cameroun), 2250701234567 (Côte d'Ivoire), etc.
         $request->validate([
-            'phone_number' => 'required|string|regex:/^237[0-9]{9}$/',
+            'phone_number' => [
+                'required',
+                'string',
+                'regex:/^(229|226|237|242|225|243|241|254|250|221|255|260)[0-9]{6,10}$/',
+            ],
             'operator' => 'required|string|in:MTN_MOMO_CMR,ORANGE_MONEY_CMR',
         ]);
 
