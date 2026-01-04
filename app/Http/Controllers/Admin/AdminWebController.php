@@ -954,30 +954,207 @@ class AdminWebController extends Controller
 
     public function messages(Request $request)
     {
-        $query = AnonymousMessage::with(['sender', 'recipient']);
+        $search = $request->get('search');
+        $status = $request->get('status');
 
-        if ($search = $request->get('search')) {
-            $query->where('content', 'like', "%{$search}%");
+        // Obtenir toutes les paires d'utilisateurs uniques (depuis AnonymousMessage ET Conversations)
+        $anonymousPairs = \DB::table('anonymous_messages')
+            ->selectRaw('
+                LEAST(sender_id, recipient_id) as user1_id,
+                GREATEST(sender_id, recipient_id) as user2_id
+            ')
+            ->groupBy('user1_id', 'user2_id');
+
+        $conversationPairs = \DB::table('conversations')
+            ->selectRaw('
+                LEAST(participant_one_id, participant_two_id) as user1_id,
+                GREATEST(participant_one_id, participant_two_id) as user2_id
+            ')
+            ->whereNull('deleted_at');
+
+        // Union des deux sources
+        $allPairs = \DB::table(\DB::raw("({$anonymousPairs->toSql()} UNION {$conversationPairs->toSql()}) as pairs"))
+            ->mergeBindings($anonymousPairs)
+            ->mergeBindings($conversationPairs)
+            ->select('user1_id', 'user2_id');
+
+        // Filtre de recherche par nom d'utilisateur
+        if ($search) {
+            $allPairs->where(function($q) use ($search) {
+                $q->whereIn('user1_id', function($subquery) use ($search) {
+                    $subquery->select('id')
+                        ->from('users')
+                        ->where('username', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%");
+                })->orWhereIn('user2_id', function($subquery) use ($search) {
+                    $subquery->select('id')
+                        ->from('users')
+                        ->where('username', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%");
+                });
+            });
         }
 
-        if ($status = $request->get('status')) {
-            if ($status === 'read') {
-                $query->whereNotNull('read_at');
-            } elseif ($status === 'unread') {
-                $query->whereNull('read_at');
+        $pairsCollection = $allPairs->get();
+
+        // Pour chaque paire, calculer les statistiques
+        $conversations = $pairsCollection->map(function($pair) {
+            // Compter messages anonymes
+            $anonymousCount = AnonymousMessage::where(function($q) use ($pair) {
+                $q->where('sender_id', $pair->user1_id)->where('recipient_id', $pair->user2_id);
+            })->orWhere(function($q) use ($pair) {
+                $q->where('sender_id', $pair->user2_id)->where('recipient_id', $pair->user1_id);
+            })->count();
+
+            $anonymousUnread = AnonymousMessage::where(function($q) use ($pair) {
+                $q->where('sender_id', $pair->user1_id)->where('recipient_id', $pair->user2_id);
+            })->orWhere(function($q) use ($pair) {
+                $q->where('sender_id', $pair->user2_id)->where('recipient_id', $pair->user1_id);
+            })->whereNull('read_at')->count();
+
+            $lastAnonymousMessage = AnonymousMessage::where(function($q) use ($pair) {
+                $q->where('sender_id', $pair->user1_id)->where('recipient_id', $pair->user2_id);
+            })->orWhere(function($q) use ($pair) {
+                $q->where('sender_id', $pair->user2_id)->where('recipient_id', $pair->user1_id);
+            })->orderBy('created_at', 'desc')->first();
+
+            // Compter messages de chat
+            $conversation = \App\Models\Conversation::where(function($q) use ($pair) {
+                $q->where('participant_one_id', $pair->user1_id)->where('participant_two_id', $pair->user2_id);
+            })->orWhere(function($q) use ($pair) {
+                $q->where('participant_one_id', $pair->user2_id)->where('participant_two_id', $pair->user1_id);
+            })->first();
+
+            $chatCount = 0;
+            $chatUnread = 0;
+            $lastChatMessage = null;
+
+            if ($conversation) {
+                $chatCount = \App\Models\ChatMessage::where('conversation_id', $conversation->id)->count();
+                $chatUnread = \App\Models\ChatMessage::where('conversation_id', $conversation->id)
+                    ->where('is_read', false)->count();
+                $lastChatMessage = \App\Models\ChatMessage::where('conversation_id', $conversation->id)
+                    ->orderBy('created_at', 'desc')->first();
             }
+
+            // Déterminer la date du dernier message (chat ou anonyme)
+            $lastMessageAt = null;
+            if ($lastAnonymousMessage && $lastChatMessage) {
+                $lastMessageAt = $lastAnonymousMessage->created_at > $lastChatMessage->created_at
+                    ? $lastAnonymousMessage->created_at
+                    : $lastChatMessage->created_at;
+            } elseif ($lastAnonymousMessage) {
+                $lastMessageAt = $lastAnonymousMessage->created_at;
+            } elseif ($lastChatMessage) {
+                $lastMessageAt = $lastChatMessage->created_at;
+            }
+
+            return (object) [
+                'user1_id' => $pair->user1_id,
+                'user2_id' => $pair->user2_id,
+                'message_count' => $anonymousCount + $chatCount,
+                'unread_count' => $anonymousUnread + $chatUnread,
+                'last_message_at' => $lastMessageAt,
+            ];
+        });
+
+        // Filtrer par statut si nécessaire
+        if ($status === 'unread') {
+            $conversations = $conversations->filter(function($conv) {
+                return $conv->unread_count > 0;
+            });
         }
 
-        $messages = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
+        // Trier par date du dernier message
+        $conversations = $conversations->sortByDesc('last_message_at')->values();
+
+        // Pagination manuelle
+        $page = $request->get('page', 1);
+        $perPage = 20;
+        $total = $conversations->count();
+        $conversations = $conversations->slice(($page - 1) * $perPage, $perPage);
+
+        $conversations = new \Illuminate\Pagination\LengthAwarePaginator(
+            $conversations,
+            $total,
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
+
+        // Charger les utilisateurs pour chaque conversation
+        $userIds = $conversations->pluck('user1_id')->merge($conversations->pluck('user2_id'))->unique();
+        $users = \App\Models\User::whereIn('id', $userIds)->get()->keyBy('id');
+
+        foreach ($conversations as $conversation) {
+            $conversation->user1 = $users->get($conversation->user1_id);
+            $conversation->user2 = $users->get($conversation->user2_id);
+        }
 
         $stats = [
-            'total' => AnonymousMessage::count(),
-            'today' => AnonymousMessage::whereDate('created_at', today())->count(),
-            'read' => AnonymousMessage::whereNotNull('read_at')->count(),
+            'total' => AnonymousMessage::count() + \App\Models\ChatMessage::count(),
+            'today' => AnonymousMessage::whereDate('created_at', today())->count() +
+                       \App\Models\ChatMessage::whereDate('created_at', today())->count(),
+            'read' => AnonymousMessage::whereNotNull('read_at')->count() +
+                      \App\Models\ChatMessage::where('is_read', true)->count(),
             'reported' => AnonymousMessage::has('reports')->count(),
         ];
 
-        return view('admin.messages.index', compact('messages', 'stats'));
+        // Si une conversation est sélectionnée, charger TOUS ses messages (anonymes + chat)
+        $selectedConversation = null;
+        $conversationMessages = collect();
+
+        if ($request->has('user1') && $request->has('user2')) {
+            $user1Id = $request->get('user1');
+            $user2Id = $request->get('user2');
+
+            // Messages anonymes
+            $anonymousMessages = AnonymousMessage::with(['sender', 'recipient'])
+                ->where(function($q) use ($user1Id, $user2Id) {
+                    $q->where(function($sq) use ($user1Id, $user2Id) {
+                        $sq->where('sender_id', $user1Id)->where('recipient_id', $user2Id);
+                    })->orWhere(function($sq) use ($user1Id, $user2Id) {
+                        $sq->where('sender_id', $user2Id)->where('recipient_id', $user1Id);
+                    });
+                })
+                ->get()
+                ->map(function($msg) {
+                    $msg->message_type = 'anonymous';
+                    return $msg;
+                });
+
+            // Messages de chat
+            $conversation = \App\Models\Conversation::where(function($q) use ($user1Id, $user2Id) {
+                $q->where('participant_one_id', $user1Id)->where('participant_two_id', $user2Id);
+            })->orWhere(function($q) use ($user1Id, $user2Id) {
+                $q->where('participant_one_id', $user2Id)->where('participant_two_id', $user1Id);
+            })->first();
+
+            $chatMessages = collect();
+            if ($conversation) {
+                $chatMessages = \App\Models\ChatMessage::with(['sender'])
+                    ->where('conversation_id', $conversation->id)
+                    ->get()
+                    ->map(function($msg) {
+                        $msg->message_type = 'chat';
+                        return $msg;
+                    });
+            }
+
+            // Fusionner et trier tous les messages par date
+            $conversationMessages = $anonymousMessages->merge($chatMessages)
+                ->sortBy('created_at')
+                ->values();
+
+            $selectedConversation = [
+                'user1' => \App\Models\User::find($user1Id),
+                'user2' => \App\Models\User::find($user2Id),
+            ];
+        }
+
+        return view('admin.messages.index', compact('conversations', 'stats', 'selectedConversation', 'conversationMessages'));
     }
 
     public function destroyMessage(AnonymousMessage $message)
