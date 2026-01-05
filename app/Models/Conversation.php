@@ -197,26 +197,39 @@ class Conversation extends Model
 
     /**
      * Mettre à jour le streak
+     * OPTIMISÉ : Ne fait les requêtes lourdes que max 1 fois par jour
      */
     public function updateStreak(): void
     {
         $now = now();
 
+        // OPTIMISATION : Vérifier si on a déjà mis à jour le streak aujourd'hui
+        // Si oui, on skip complètement pour éviter les requêtes SQL inutiles
+        if ($this->streak_updated_at && $this->streak_updated_at->isToday()) {
+            // Déjà mis à jour aujourd'hui, on ne fait rien
+            return;
+        }
+
+        $todayStart = $now->copy()->startOfDay();
+
+        // OPTIMISATION : Une seule requête pour vérifier les deux participants
+        // au lieu de 2 requêtes séparées
+        // Utiliser DB::table directement pour éviter les conflits avec orderBy de la relation
+        $messagesToday = \DB::table('chat_messages')
+            ->where('conversation_id', $this->id)
+            ->whereIn('sender_id', [$this->participant_one_id, $this->participant_two_id])
+            ->where('created_at', '>=', $todayStart)
+            ->whereNull('deleted_at')
+            ->select('sender_id')
+            ->distinct()
+            ->pluck('sender_id')
+            ->toArray();
+
+        $participantOneMessaged = in_array($this->participant_one_id, $messagesToday);
+        $participantTwoMessaged = in_array($this->participant_two_id, $messagesToday);
+
         // Si pas de streak précédent, initialiser
         if (!$this->streak_updated_at) {
-            // Vérifier si les deux participants ont envoyé un message aujourd'hui
-            $todayStart = $now->copy()->startOfDay();
-
-            $participantOneMessaged = $this->messages()
-                ->where('sender_id', $this->participant_one_id)
-                ->where('created_at', '>=', $todayStart)
-                ->exists();
-
-            $participantTwoMessaged = $this->messages()
-                ->where('sender_id', $this->participant_two_id)
-                ->where('created_at', '>=', $todayStart)
-                ->exists();
-
             if ($participantOneMessaged && $participantTwoMessaged) {
                 $this->increment('streak_count');
                 $this->update([
@@ -234,19 +247,6 @@ class Conversation extends Model
         if ($hoursSinceUpdate > 24) {
             // Calculer combien de jours se sont écoulés
             $daysMissed = floor($hoursSinceUpdate / 24);
-
-            // Vérifier si les deux participants ont envoyé un message aujourd'hui
-            $todayStart = $now->copy()->startOfDay();
-
-            $participantOneMessaged = $this->messages()
-                ->where('sender_id', $this->participant_one_id)
-                ->where('created_at', '>=', $todayStart)
-                ->exists();
-
-            $participantTwoMessaged = $this->messages()
-                ->where('sender_id', $this->participant_two_id)
-                ->where('created_at', '>=', $todayStart)
-                ->exists();
 
             // Si les deux ont messagé aujourd'hui, on incrémente
             if ($participantOneMessaged && $participantTwoMessaged) {
