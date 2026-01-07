@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Story extends Model
@@ -112,6 +113,22 @@ class Story extends Model
     {
         return $this->belongsToMany(User::class, 'story_views')
             ->withTimestamps();
+    }
+
+    /**
+     * Réponses à la story
+     */
+    public function replies(): HasMany
+    {
+        return $this->hasMany(StoryReply::class);
+    }
+
+    /**
+     * Check if story is active
+     */
+    public function isActive(): bool
+    {
+        return $this->is_active;
     }
 
     // ==================== SCOPES ====================

@@ -12,6 +12,8 @@ class ConfessionResource extends JsonResource
         return [
             'id' => $this->id,
             'content' => $this->content,
+            'image' => $this->image,
+            'image_url' => $this->image_url,
             'type' => $this->type,
             'is_public' => $this->is_public,
             'is_private' => $this->is_private,

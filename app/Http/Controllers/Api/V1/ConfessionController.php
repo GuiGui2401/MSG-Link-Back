@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ConfessionController extends Controller
 {
@@ -151,9 +152,16 @@ class ConfessionController extends Controller
 
         $confessionData = [
             'author_id' => $user->id,
-            'content' => $validated['content'],
+            'content' => $validated['content'] ?? '',
             'type' => $validated['type'],
         ];
+
+        // Gérer l'upload d'image
+        if ($request->hasFile('image')) {
+            $image = $request->file('image');
+            $path = $image->store('confessions', 'public');
+            $confessionData['image'] = $path;
+        }
 
         // Si confession privée, vérifier le destinataire
         if ($validated['type'] === Confession::TYPE_PRIVATE) {

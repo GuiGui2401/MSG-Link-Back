@@ -24,6 +24,9 @@ use App\Http\Controllers\Admin\ModerationController;
 use App\Http\Controllers\Admin\WithdrawalController as AdminWithdrawalController;
 use App\Http\Controllers\Admin\MaintenanceController;
 use App\Http\Controllers\Api\LegalPageController;
+use App\Http\Controllers\Api\V1\FollowController;
+use App\Http\Controllers\Api\V1\StoryReplyController;
+use App\Http\Controllers\Api\V1\PostPromotionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -279,6 +282,29 @@ Route::prefix('v1')->group(function () {
             Route::post('/{story}/view', [StoryController::class, 'markAsViewed']);
             Route::get('/{story}/viewers', [StoryController::class, 'viewers']);
             Route::delete('/{story}', [StoryController::class, 'destroy']);
+
+            // Story Replies
+            Route::get('/{story}/replies', [StoryReplyController::class, 'index']);
+            Route::post('/{story}/replies', [StoryReplyController::class, 'store']);
+            Route::delete('/replies/{reply}', [StoryReplyController::class, 'destroy']);
+        });
+
+        // ==================== FOLLOWS ====================
+        Route::prefix('users')->group(function () {
+            Route::post('/{username}/follow', [FollowController::class, 'follow']);
+            Route::delete('/{username}/follow', [FollowController::class, 'unfollow']);
+            Route::get('/{username}/followers', [FollowController::class, 'followers']);
+            Route::get('/{username}/following', [FollowController::class, 'following']);
+            Route::get('/{username}/follow-status', [FollowController::class, 'checkFollowing']);
+        });
+
+        // ==================== POST PROMOTIONS ====================
+        Route::prefix('promotions')->group(function () {
+            Route::get('/pricing', [PostPromotionController::class, 'pricing']);
+            Route::get('/my-promotions', [PostPromotionController::class, 'myPromotions']);
+            Route::post('/confessions/{confession}', [PostPromotionController::class, 'promote']);
+            Route::delete('/{promotion}', [PostPromotionController::class, 'cancel']);
+            Route::get('/{promotion}/stats', [PostPromotionController::class, 'stats']);
         });
 
         // ==================== PAYMENTS ====================

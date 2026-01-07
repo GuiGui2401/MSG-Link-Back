@@ -19,6 +19,7 @@ class Confession extends Model
         'author_id',
         'recipient_id',
         'content',
+        'image',
         'type',
         'status',
         'moderated_by',
@@ -99,6 +100,33 @@ class Confession extends Model
         return $this->hasMany(ConfessionComment::class);
     }
 
+    /**
+     * Promotions de la confession
+     */
+    public function promotions(): HasMany
+    {
+        return $this->hasMany(PostPromotion::class);
+    }
+
+    /**
+     * Get active promotion
+     */
+    public function activePromotion(): ?PostPromotion
+    {
+        return $this->promotions()
+            ->where('status', PostPromotion::STATUS_ACTIVE)
+            ->where('ends_at', '>', now())
+            ->first();
+    }
+
+    /**
+     * Check if post is promoted
+     */
+    public function isPromoted(): bool
+    {
+        return $this->activePromotion() !== null;
+    }
+
     // ==================== ACCESSORS ====================
 
     /**
@@ -107,6 +135,23 @@ class Confession extends Model
     public function getAuthorInitialAttribute(): string
     {
         return $this->author->initial ?? '?';
+    }
+
+    /**
+     * URL complète de l'image
+     */
+    public function getImageUrlAttribute(): ?string
+    {
+        if (!$this->image) {
+            return null;
+        }
+
+        // Si c'est déjà une URL complète
+        if (str_starts_with($this->image, 'http')) {
+            return $this->image;
+        }
+
+        return asset('storage/' . $this->image);
     }
 
     /**

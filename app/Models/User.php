@@ -11,10 +11,11 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use App\Traits\HasWallet;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
-    use HasApiTokens, HasFactory, Notifiable, SoftDeletes, HasWallet;
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes, HasWallet, HasRoles;
 
     /**
      * The attributes that are mass assignable.
@@ -402,6 +403,32 @@ class User extends Authenticatable implements MustVerifyEmail
             ->where('expires_at', '>', now());
     }
 
+    /**
+     * Users that this user is following
+     */
+    public function following(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'followers', 'follower_id', 'following_id')
+            ->withTimestamps();
+    }
+
+    /**
+     * Users that follow this user
+     */
+    public function followers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'followers', 'following_id', 'follower_id')
+            ->withTimestamps();
+    }
+
+    /**
+     * Post promotions
+     */
+    public function postPromotions(): HasMany
+    {
+        return $this->hasMany(PostPromotion::class);
+    }
+
     // ==================== SCOPES ====================
 
     /**
@@ -549,6 +576,68 @@ class User extends Authenticatable implements MustVerifyEmail
     public function updateLastSeen(): void
     {
         $this->update(['last_seen_at' => now()]);
+    }
+
+    /**
+     * Follow a user
+     */
+    public function follow(User $user): bool
+    {
+        if ($this->id === $user->id) {
+            return false;
+        }
+
+        if (!$this->isFollowing($user)) {
+            $this->following()->attach($user->id);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Unfollow a user
+     */
+    public function unfollow(User $user): bool
+    {
+        if ($this->isFollowing($user)) {
+            $this->following()->detach($user->id);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if following a user
+     */
+    public function isFollowing(User $user): bool
+    {
+        return $this->following()->where('following_id', $user->id)->exists();
+    }
+
+    /**
+     * Check if followed by a user
+     */
+    public function isFollowedBy(User $user): bool
+    {
+        return $this->followers()->where('follower_id', $user->id)->exists();
+    }
+
+    /**
+     * Get followers count
+     */
+    public function getFollowersCountAttribute(): int
+    {
+        return $this->followers()->count();
+    }
+
+    /**
+     * Get following count
+     */
+    public function getFollowingCountAttribute(): int
+    {
+        return $this->following()->count();
     }
 
     /**
