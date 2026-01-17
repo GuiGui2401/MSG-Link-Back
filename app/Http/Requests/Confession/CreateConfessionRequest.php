@@ -18,7 +18,7 @@ class CreateConfessionRequest extends FormRequest
             'type' => 'required|in:private,public',
             'recipient_username' => 'required_if:type,private|nullable|string|exists:users,username',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:10240',
-            'video' => 'nullable|mimetypes:video/mp4,video/quicktime,video/x-msvideo,video/webm|max:102400',
+            'video' => 'nullable|mimetypes:video/mp4,video/quicktime,video/x-msvideo,video/webm,video/x-matroska|max:102400',
             'is_anonymous' => 'nullable|boolean',
         ];
     }

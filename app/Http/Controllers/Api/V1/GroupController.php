@@ -11,6 +11,7 @@ use App\Events\GroupMessageSent;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class GroupController extends Controller
@@ -154,7 +155,15 @@ class GroupController extends Controller
             'description' => 'nullable|string|max:500',
             'is_public' => 'sometimes|boolean',
             'max_members' => 'sometimes|integer|min:2|max:200',
+            'avatar' => 'nullable|image|max:2048',
         ]);
+
+        if ($request->hasFile('avatar')) {
+            if ($group->avatar_url) {
+                Storage::disk('public')->delete($group->avatar_url);
+            }
+            $validated['avatar_url'] = $request->file('avatar')->store('groups/avatars', 'public');
+        }
 
         $group->update($validated);
 
@@ -404,8 +413,8 @@ class GroupController extends Controller
         $validated = $request->validate([
             'content' => 'nullable|string|max:5000',
             'reply_to_message_id' => 'nullable|exists:group_messages,id',
-            'voice' => 'nullable|file|mimetypes:audio/mpeg,audio/mp3,audio/wav,audio/m4a,audio/x-m4a,audio/mp4,audio/aac,audio/x-aac,audio/ogg,audio/webm|max:10240',
-            'video' => 'nullable|mimetypes:video/mp4,video/quicktime,video/x-msvideo,video/webm|max:51200',
+            'voice' => 'nullable|file|mimetypes:audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,audio/vnd.wave,audio/m4a,audio/x-m4a,audio/mp4,audio/aac,audio/x-aac,audio/ogg,audio/webm|max:10240',
+            'video' => 'nullable|mimetypes:video/mp4,video/quicktime,video/x-msvideo,video/webm,video/x-matroska|max:51200',
             'image' => 'nullable|image|max:10240',
         ]);
 

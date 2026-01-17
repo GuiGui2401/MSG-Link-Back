@@ -11,11 +11,12 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use App\Traits\HasWallet;
+use App\Traits\Reportable;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
-    use HasApiTokens, HasFactory, Notifiable, SoftDeletes, HasWallet, HasRoles;
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes, HasWallet, HasRoles, Reportable;
 
     /**
      * The attributes that are mass assignable.

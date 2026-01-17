@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\User\UpdateProfileRequest;
+use App\Http\Requests\User\ReportUserRequest;
 use App\Http\Requests\User\UpdateSettingsRequest;
 use App\Http\Requests\User\ChangePasswordRequest;
 use App\Http\Resources\UserResource;
@@ -311,6 +312,35 @@ class UserController extends Controller
                 'total' => $blockedUsers->total(),
             ],
         ]);
+    }
+
+    /**
+     * Signaler un utilisateur
+     */
+    public function report(ReportUserRequest $request, string $username): JsonResponse
+    {
+        $reporter = $request->user();
+        $validated = $request->validated();
+
+        $user = User::where('username', $username)->firstOrFail();
+
+        if ($reporter->id === $user->id) {
+            return response()->json([
+                'message' => 'Vous ne pouvez pas vous signaler vous-même.',
+            ], 422);
+        }
+
+        if ($user->isReportedBy($reporter)) {
+            return response()->json([
+                'message' => 'Vous avez déjà signalé cet utilisateur.',
+            ], 422);
+        }
+
+        $user->report($reporter, $validated['reason'], $validated['description'] ?? null);
+
+        return response()->json([
+            'message' => 'Signalement envoyé. Merci pour votre vigilance.',
+        ], 201);
     }
 
     /**

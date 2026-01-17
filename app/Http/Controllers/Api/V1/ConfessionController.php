@@ -473,6 +473,9 @@ class ConfessionController extends Controller
                         'initial' => $comment->author->initial,
                         'avatar_url' => $comment->author->avatar_url,
                     ],
+                    'media_url' => $comment->media_url,
+                    'media_full_url' => $comment->media_full_url,
+                    'media_type' => $comment->media_type,
                     'created_at' => $comment->created_at,
                     'is_mine' => $comment->author_id === $currentUserId,
                 ];
@@ -508,15 +511,24 @@ class ConfessionController extends Controller
         }
 
         $validated = $request->validate([
-            'content' => 'required|string|max:1000',
+            'content' => 'required_without:image|string|max:1000',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:10240',
             'is_anonymous' => 'boolean',
         ]);
 
         $comment = $confession->comments()->create([
             'author_id' => $user->id,
-            'content' => $validated['content'],
+            'content' => $validated['content'] ?? '',
             'is_anonymous' => $validated['is_anonymous'] ?? false,
         ]);
+
+        if ($request->hasFile('image')) {
+            $image = $request->file('image');
+            $path = $image->store('confessions/comments', 'public');
+            $comment->media_url = $path;
+            $comment->media_type = $image->getMimeType();
+            $comment->save();
+        }
 
         $comment->load('author:id,first_name,username,avatar');
 
@@ -526,6 +538,9 @@ class ConfessionController extends Controller
                 'id' => $comment->id,
                 'content' => $comment->getDecryptedAttribute('content') ?? $comment->content,
                 'is_anonymous' => $comment->is_anonymous,
+                'media_url' => $comment->media_url,
+                'media_full_url' => $comment->media_full_url,
+                'media_type' => $comment->media_type,
                 'author' => $comment->is_anonymous ? [
                     'name' => 'Anonyme',
                     'initial' => '?',

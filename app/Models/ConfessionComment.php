@@ -17,10 +17,16 @@ class ConfessionComment extends Model
         'author_id',
         'content',
         'is_anonymous',
+        'media_url',
+        'media_type',
     ];
 
     protected $casts = [
         'is_anonymous' => 'boolean',
+    ];
+
+    protected $appends = [
+        'media_full_url',
     ];
 
     /**
@@ -68,5 +74,21 @@ class ConfessionComment extends Model
             return 'Anonyme';
         }
         return $this->author->first_name ?? 'Utilisateur';
+    }
+
+    /**
+     * URL complète du média
+     */
+    public function getMediaFullUrlAttribute(): ?string
+    {
+        if (!$this->media_url) {
+            return null;
+        }
+
+        if (str_starts_with($this->media_url, 'http')) {
+            return $this->media_url;
+        }
+
+        return asset('storage/' . $this->media_url);
     }
 }

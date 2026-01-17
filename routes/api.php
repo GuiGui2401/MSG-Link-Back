@@ -132,6 +132,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/blocked', [UserController::class, 'blockedUsers']);
             Route::post('/{username}/block', [UserController::class, 'block']);
             Route::delete('/{username}/block', [UserController::class, 'unblock']);
+            Route::post('/{username}/report', [UserController::class, 'report']);
         });
 
         // ==================== MESSAGES ANONYMES ====================
