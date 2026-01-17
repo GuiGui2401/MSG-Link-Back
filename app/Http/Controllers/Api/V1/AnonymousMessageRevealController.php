@@ -46,13 +46,39 @@ class AnonymousMessageRevealController extends Controller
         $price = Setting::get('reveal_anonymous_price', 1000);
 
         // Valider les données de paiement
+        // Validation flexible pour accepter différents formats de numéros internationaux
+        // Format attendu: code pays (3-4 chiffres) + numéro local (6-10 chiffres)
+        // Exemples: 237651234567 (Cameroun), 2250701234567 (Côte d'Ivoire), etc.
         $request->validate([
-            'phone_number' => 'required|string|regex:/^237[0-9]{9}$/',
+            'phone_number' => [
+                'required',
+                'string',
+                'regex:/^(229|226|237|242|225|243|241|254|250|221|255|260)[0-9]{6,10}$/',
+            ],
             'operator' => 'required|string|in:MTN_MOMO_CMR,ORANGE_MONEY_CMR',
         ]);
 
         try {
             DB::beginTransaction();
+
+            // Annuler les anciens paiements en attente pour ce message
+            Payment::where('user_id', $user->id)
+                ->where('type', 'reveal_identity')
+                ->whereIn('status', ['pending', 'processing'])
+                ->get()
+                ->filter(function ($p) use ($message) {
+                    return isset($p->metadata['message_id']) && $p->metadata['message_id'] == $message->id;
+                })
+                ->each(function ($oldPayment) {
+                    $oldPayment->update([
+                        'status' => 'cancelled',
+                        'failure_reason' => 'New payment initiated',
+                    ]);
+                    Log::info('🔄 [REVEAL] Ancien paiement annulé', [
+                        'payment_id' => $oldPayment->id,
+                        'order_id' => $oldPayment->provider_reference,
+                    ]);
+                });
 
             // Créer une référence unique
             $reference = 'REVEAL-' . strtoupper(Str::random(12));
@@ -164,10 +190,12 @@ class AnonymousMessageRevealController extends Controller
             ]);
         }
 
-        // Récupérer le paiement en cours pour ce message
+        // Récupérer le paiement le plus récent en cours pour ce message
+        // IMPORTANT: Ordonner par created_at DESC pour obtenir le PLUS RÉCENT
         $payment = Payment::where('user_id', $user->id)
             ->where('type', 'reveal_identity')
             ->whereIn('status', ['pending', 'processing'])
+            ->orderBy('created_at', 'desc') // ← FIX: Prendre le plus récent
             ->get()
             ->filter(function ($p) use ($message) {
                 return isset($p->metadata['message_id']) && $p->metadata['message_id'] == $message->id;
@@ -175,11 +203,23 @@ class AnonymousMessageRevealController extends Controller
             ->first();
 
         if (!$payment) {
+            Log::warning('⚠️ [REVEAL] Aucun paiement trouvé', [
+                'user_id' => $user->id,
+                'message_id' => $message->id,
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Aucun paiement en cours trouvé pour ce message.',
             ], 404);
         }
+
+        Log::info('🔍 [REVEAL] Vérification du paiement', [
+            'payment_id' => $payment->id,
+            'order_id' => $payment->provider_reference,
+            'current_status' => $payment->status,
+            'created_at' => $payment->created_at,
+        ]);
 
         try {
             // Vérifier le statut auprès de Lygos
@@ -193,9 +233,10 @@ class AnonymousMessageRevealController extends Controller
                 'lygos_status_lowercase' => isset($lygosStatus['status']) ? strtolower($lygosStatus['status']) : 'unknown',
             ]);
 
-            // Si le paiement est réussi (selon la doc Lygos: uniquement "success")
-            // Référence: https://github.com/Warano02/lygos - les statuts sont: pending, success, failed
-            if (isset($lygosStatus['status']) && strtolower($lygosStatus['status']) === 'success') {
+            // Si le paiement est réussi
+            // Lygos peut retourner "success" OU "completed" pour un paiement réussi
+            $successStatuses = ['success', 'completed'];
+            if (isset($lygosStatus['status']) && in_array(strtolower($lygosStatus['status']), $successStatuses)) {
                 DB::beginTransaction();
 
                 // Mettre à jour le paiement
@@ -247,19 +288,18 @@ class AnonymousMessageRevealController extends Controller
                 ], 400);
             }
 
-            // Vérifier si c'est un statut non officiel
+            // Vérifier si c'est un statut non reconnu
             $currentStatus = strtolower($lygosStatus['status'] ?? 'unknown');
-            $officialStatuses = ['success', 'failed', 'pending'];
+            $knownStatuses = ['success', 'completed', 'failed', 'pending', 'cancelled', 'expired'];
 
-            if (!in_array($currentStatus, $officialStatuses) && $currentStatus !== 'unknown') {
-                Log::warning('⚠️ [REVEAL] STATUT LYGOS NON OFFICIEL DÉTECTÉ!', [
+            if (!in_array($currentStatus, $knownStatuses) && $currentStatus !== 'unknown') {
+                Log::warning('⚠️ [REVEAL] STATUT LYGOS NON RECONNU', [
                     'payment_id' => $payment->id,
                     'order_id' => $payment->provider_reference,
-                    'unofficial_status' => $lygosStatus['status'],
-                    'message' => 'Ce statut ne fait pas partie de la documentation officielle Lygos!',
-                    'official_statuses' => $officialStatuses,
-                    'action' => 'Paiement considéré comme en attente par sécurité',
-                    'documentation' => 'https://github.com/Warano02/lygos',
+                    'unknown_status' => $lygosStatus['status'],
+                    'message' => 'Ce statut n\'est pas dans la liste des statuts connus',
+                    'known_statuses' => $knownStatuses,
+                    'action' => 'Paiement considéré comme en attente',
                 ]);
             }
 
@@ -296,6 +336,25 @@ class AnonymousMessageRevealController extends Controller
                     'data' => [
                         'status' => 'processing',
                         'payment_link' => $payment->metadata['lygos_link'] ?? null,
+                    ],
+                ]);
+            }
+
+            // Si timeout de Lygos, retourner processing aussi mais avec un message différent
+            if (str_contains($errorMessage, 'LYGOS_TIMEOUT')) {
+                Log::warning('⏱️ [REVEAL] Timeout lors de la communication avec Lygos', [
+                    'payment_id' => $payment->id,
+                    'order_id' => $payment->provider_reference,
+                    'message' => 'Lygos API est lent, réessayer automatiquement',
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Vérification en cours. La connexion avec Lygos est lente, veuillez patienter...',
+                    'data' => [
+                        'status' => 'processing',
+                        'payment_link' => $payment->metadata['lygos_link'] ?? null,
+                        'lygos_timeout' => true, // Indicateur pour le frontend
                     ],
                 ]);
             }

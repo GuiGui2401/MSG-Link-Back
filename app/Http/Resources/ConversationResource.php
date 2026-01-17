@@ -34,6 +34,16 @@ class ConversationResource extends JsonResource
         // Vérifier si l'identité peut être révélée (premium ou payé pour révéler)
         $canViewIdentity = $user->is_premium || $this->isIdentityRevealedFor($user);
 
+        // Récupérer l'anonymous_message_id depuis le premier message de la conversation
+        $anonymousMessageId = $this->messages()->orderBy('created_at')->value('anonymous_message_id');
+
+        // Vérifier si l'utilisateur actuel peut initier un paiement pour révéler l'identité
+        // N'importe quel participant de la conversation peut payer pour révéler l'autre
+        // Conditions:
+        // 1. L'identité n'est pas encore révélée pour cet utilisateur
+        // 2. L'utilisateur n'est pas premium (les premium voient automatiquement)
+        $canInitiateReveal = !$canViewIdentity;
+
         return [
             'id' => $this->id,
 
@@ -73,6 +83,8 @@ class ConversationResource extends JsonResource
             'identity_revealed' => $canViewIdentity,
             'has_premium' => $this->has_premium ?? false,
             'unread_count' => $this->unread_count ?? 0,
+            'anonymous_message_id' => $anonymousMessageId, // ID du message anonyme si la conversation vient d'un message anonyme
+            'can_initiate_reveal' => $canInitiateReveal, // L'utilisateur peut-il payer pour révéler l'identité ?
 
             'last_message_at' => $this->last_message_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),

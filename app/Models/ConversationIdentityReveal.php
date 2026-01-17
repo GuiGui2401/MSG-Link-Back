@@ -12,6 +12,7 @@ class ConversationIdentityReveal extends Model
         'user_id',
         'revealed_user_id',
         'wallet_transaction_id',
+        'payment_id',
         'revealed_at',
     ];
 
@@ -51,5 +52,13 @@ class ConversationIdentityReveal extends Model
     public function walletTransaction(): BelongsTo
     {
         return $this->belongsTo(WalletTransaction::class);
+    }
+
+    /**
+     * Le paiement Lygos associé
+     */
+    public function payment(): BelongsTo
+    {
+        return $this->belongsTo(Payment::class);
     }
 }

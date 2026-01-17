@@ -197,31 +197,78 @@ class Conversation extends Model
 
     /**
      * Mettre à jour le streak
+     * OPTIMISÉ : Ne fait les requêtes lourdes que max 1 fois par jour
      */
     public function updateStreak(): void
     {
         $now = now();
 
-        // Si pas de streak précédent ou streak expiré (plus de 24h sans message)
-        if (!$this->streak_updated_at || $this->streak_updated_at->diffInHours($now) > 24) {
-            // Vérifier si les deux participants ont envoyé un message aujourd'hui
-            $todayStart = $now->copy()->startOfDay();
+        // OPTIMISATION : Vérifier si on a déjà mis à jour le streak aujourd'hui
+        // Si oui, on skip complètement pour éviter les requêtes SQL inutiles
+        if ($this->streak_updated_at && $this->streak_updated_at->isToday()) {
+            // Déjà mis à jour aujourd'hui, on ne fait rien
+            return;
+        }
 
-            $participantOneMessaged = $this->messages()
-                ->where('sender_id', $this->participant_one_id)
-                ->where('created_at', '>=', $todayStart)
-                ->exists();
+        $todayStart = $now->copy()->startOfDay();
 
-            $participantTwoMessaged = $this->messages()
-                ->where('sender_id', $this->participant_two_id)
-                ->where('created_at', '>=', $todayStart)
-                ->exists();
+        // OPTIMISATION : Une seule requête pour vérifier les deux participants
+        // au lieu de 2 requêtes séparées
+        // Utiliser DB::table directement pour éviter les conflits avec orderBy de la relation
+        $messagesToday = \DB::table('chat_messages')
+            ->where('conversation_id', $this->id)
+            ->whereIn('sender_id', [$this->participant_one_id, $this->participant_two_id])
+            ->where('created_at', '>=', $todayStart)
+            ->whereNull('deleted_at')
+            ->select('sender_id')
+            ->distinct()
+            ->pluck('sender_id')
+            ->toArray();
 
+        $participantOneMessaged = in_array($this->participant_one_id, $messagesToday);
+        $participantTwoMessaged = in_array($this->participant_two_id, $messagesToday);
+
+        // Si pas de streak précédent, initialiser
+        if (!$this->streak_updated_at) {
             if ($participantOneMessaged && $participantTwoMessaged) {
                 $this->increment('streak_count');
                 $this->update([
                     'streak_updated_at' => $now,
                     'flame_level' => $this->calculateFlameLevel($this->streak_count + 1),
+                ]);
+            }
+            return;
+        }
+
+        // Calculer le nombre d'heures depuis la dernière mise à jour
+        $hoursSinceUpdate = $this->streak_updated_at->diffInHours($now);
+
+        // Si plus de 24h depuis la dernière mise à jour
+        if ($hoursSinceUpdate > 24) {
+            // Calculer combien de jours se sont écoulés
+            $daysMissed = floor($hoursSinceUpdate / 24);
+
+            // Si les deux ont messagé aujourd'hui, on incrémente
+            if ($participantOneMessaged && $participantTwoMessaged) {
+                // Décrémenter d'abord pour les jours manqués (sauf aujourd'hui)
+                $newStreakCount = max(0, $this->streak_count - ($daysMissed - 1));
+
+                // Puis incrémenter pour aujourd'hui
+                $newStreakCount++;
+
+                $this->update([
+                    'streak_count' => $newStreakCount,
+                    'streak_updated_at' => $now,
+                    'flame_level' => $this->calculateFlameLevel($newStreakCount),
+                ]);
+            } else {
+                // Aucun des deux n'a messagé aujourd'hui, décrémenter pour tous les jours manqués
+                $newStreakCount = max(0, $this->streak_count - $daysMissed);
+
+                $this->update([
+                    'streak_count' => $newStreakCount,
+                    'streak_updated_at' => $now,
+                    'flame_level' => $this->calculateFlameLevel($newStreakCount),
                 ]);
             }
         }

@@ -11,16 +11,22 @@ use App\Models\ChatMessage;
 use App\Models\User;
 use App\Models\ConversationIdentityReveal;
 use App\Models\WalletTransaction;
+use App\Models\Payment;
+use App\Models\Setting;
 use App\Events\ChatMessageSent;
 use App\Services\NotificationService;
+use App\Services\LygosService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ChatController extends Controller
 {
     public function __construct(
-        private NotificationService $notificationService
+        private NotificationService $notificationService,
+        private LygosService $lygosService
     ) {}
 
     /**
@@ -351,7 +357,7 @@ class ChatController extends Controller
         }
 
         // Récupérer le prix de révélation depuis les settings
-        $revealPrice = reveal_anonymous_price();
+        $revealPrice = Setting::get('reveal_anonymous_price', 1000);
 
         // Vérifier si l'utilisateur a un solde suffisant
         if ($user->wallet_balance < $revealPrice) {
@@ -414,6 +420,338 @@ class ChatController extends Controller
 
             return response()->json([
                 'message' => 'Une erreur est survenue lors de la révélation de l\'identité.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Initier le paiement Lygos pour révéler l'identité dans une conversation
+     */
+    public function initiateRevealPayment(Request $request, Conversation $conversation): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifier que l'utilisateur est participant de la conversation
+        if (!$conversation->hasParticipant($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous n\'êtes pas participant de cette conversation.',
+            ], 403);
+        }
+
+        $otherUser = $conversation->getOtherParticipant($user);
+
+        // Vérifier que l'identité n'est pas déjà révélée
+        if ($conversation->hasRevealedIdentityFor($user, $otherUser)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous avez déjà révélé l\'identité de cet utilisateur.',
+            ], 400);
+        }
+
+        // Récupérer le prix depuis les settings
+        $price = Setting::get('reveal_anonymous_price', 1000);
+
+        // Valider les données de paiement
+        // Validation flexible pour accepter différents formats de numéros internationaux
+        // Format attendu: code pays (3-4 chiffres) + numéro local (6-10 chiffres)
+        // Exemples: 237651234567 (Cameroun), 2250701234567 (Côte d'Ivoire), etc.
+        $request->validate([
+            'phone_number' => [
+                'required',
+                'string',
+                'regex:/^(229|226|237|242|225|243|241|254|250|221|255|260)[0-9]{6,10}$/',
+            ],
+            'operator' => 'required|string|in:MTN_MOMO_CMR,ORANGE_MONEY_CMR',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            // Annuler les anciens paiements en attente pour cette conversation
+            Payment::where('user_id', $user->id)
+                ->where('type', 'reveal_identity')
+                ->whereIn('status', ['pending', 'processing'])
+                ->get()
+                ->filter(function ($p) use ($conversation) {
+                    return isset($p->metadata['conversation_id']) && $p->metadata['conversation_id'] == $conversation->id;
+                })
+                ->each(function ($oldPayment) {
+                    $oldPayment->update([
+                        'status' => 'cancelled',
+                        'failure_reason' => 'New payment initiated',
+                    ]);
+                    Log::info('🔄 [REVEAL CONV] Ancien paiement annulé', [
+                        'payment_id' => $oldPayment->id,
+                        'order_id' => $oldPayment->provider_reference,
+                    ]);
+                });
+
+            // Créer une référence unique
+            $reference = 'REVEAL-CONV-' . strtoupper(Str::random(12));
+
+            // Créer l'enregistrement de paiement
+            $payment = Payment::create([
+                'user_id' => $user->id,
+                'type' => 'reveal_identity',
+                'provider' => 'ligosapp',
+                'amount' => $price,
+                'currency' => 'XAF',
+                'status' => 'pending',
+                'reference' => $reference,
+                'metadata' => [
+                    'context' => 'conversation', // Pour différencier des messages
+                    'conversation_id' => $conversation->id,
+                    'revealed_user_id' => $otherUser->id,
+                    'phone_number' => $request->phone_number,
+                    'operator' => $request->operator,
+                ],
+            ]);
+
+            // Initialiser le paiement avec Lygos
+            $lygosResponse = $this->lygosService->initializePayment(
+                trackId: $reference,
+                amount: $price,
+                phoneNumber: $request->phone_number,
+                operator: $request->operator,
+                country: 'CMR',
+                currency: 'XAF'
+            );
+
+            // Mettre à jour le payment avec les infos Lygos
+            $payment->update([
+                'provider_reference' => $lygosResponse['order_id'],
+                'status' => 'processing',
+                'metadata' => array_merge($payment->metadata ?? [], [
+                    'lygos_payment_id' => $lygosResponse['id'] ?? null,
+                    'lygos_link' => $lygosResponse['link'] ?? null,
+                ]),
+            ]);
+
+            DB::commit();
+
+            Log::info('✅ [REVEAL CONV] Paiement initié', [
+                'user_id' => $user->id,
+                'conversation_id' => $conversation->id,
+                'reference' => $reference,
+                'order_id' => $lygosResponse['order_id'],
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Paiement initié avec succès.',
+                'data' => [
+                    'payment_id' => $payment->id,
+                    'reference' => $reference,
+                    'order_id' => $lygosResponse['order_id'],
+                    'amount' => $price,
+                    'currency' => 'XAF',
+                    'payment_link' => $lygosResponse['link'] ?? null,
+                    'status' => 'processing',
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            Log::error('❌ [REVEAL CONV] Erreur lors de l\'initiation du paiement', [
+                'user_id' => $user->id,
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de l\'initiation du paiement: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Vérifier le statut du paiement et révéler l'identité si payé
+     */
+    public function checkRevealPaymentStatus(Request $request, Conversation $conversation): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifier que l'utilisateur est participant de la conversation
+        if (!$conversation->hasParticipant($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous n\'êtes pas participant de cette conversation.',
+            ], 403);
+        }
+
+        $otherUser = $conversation->getOtherParticipant($user);
+
+        // Vérifier si l'identité est déjà révélée
+        if ($conversation->hasRevealedIdentityFor($user, $otherUser)) {
+            return response()->json([
+                'success' => true,
+                'message' => 'L\'identité a déjà été révélée.',
+                'data' => [
+                    'status' => 'revealed',
+                    'other_participant' => [
+                        'id' => $otherUser->id,
+                        'username' => $otherUser->username,
+                        'first_name' => $otherUser->first_name,
+                        'last_name' => $otherUser->last_name,
+                        'full_name' => $otherUser->full_name,
+                        'avatar_url' => $otherUser->avatar_url,
+                    ],
+                ],
+            ]);
+        }
+
+        // Récupérer le paiement le plus récent en cours pour cette conversation
+        $payment = Payment::where('user_id', $user->id)
+            ->where('type', 'reveal_identity')
+            ->whereIn('status', ['pending', 'processing'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->filter(function ($p) use ($conversation) {
+                return isset($p->metadata['conversation_id']) && $p->metadata['conversation_id'] == $conversation->id;
+            })
+            ->first();
+
+        if (!$payment) {
+            Log::warning('⚠️ [REVEAL CONV] Aucun paiement trouvé', [
+                'user_id' => $user->id,
+                'conversation_id' => $conversation->id,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucun paiement en cours trouvé pour cette conversation.',
+            ], 404);
+        }
+
+        Log::info('🔍 [REVEAL CONV] Vérification du paiement', [
+            'payment_id' => $payment->id,
+            'order_id' => $payment->provider_reference,
+            'current_status' => $payment->status,
+            'created_at' => $payment->created_at,
+        ]);
+
+        try {
+            // Vérifier le statut auprès de Lygos
+            $lygosStatus = $this->lygosService->getTransactionStatus($payment->provider_reference);
+
+            Log::info('🔍 [REVEAL CONV] Statut Lygos', [
+                'payment_id' => $payment->id,
+                'order_id' => $payment->provider_reference,
+                'lygos_status' => $lygosStatus['status'] ?? 'unknown',
+            ]);
+
+            // Si le paiement est réussi
+            $successStatuses = ['success', 'completed'];
+            if (isset($lygosStatus['status']) && in_array(strtolower($lygosStatus['status']), $successStatuses)) {
+                DB::beginTransaction();
+
+                // Mettre à jour le paiement
+                $payment->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                ]);
+
+                // Créer la révélation d'identité
+                ConversationIdentityReveal::create([
+                    'conversation_id' => $conversation->id,
+                    'user_id' => $user->id,
+                    'revealed_user_id' => $otherUser->id,
+                    'payment_id' => $payment->id,
+                    'revealed_at' => now(),
+                ]);
+
+                DB::commit();
+
+                Log::info('✅ [REVEAL CONV] Identité révélée', [
+                    'payment_id' => $payment->id,
+                    'conversation_id' => $conversation->id,
+                    'revealed_user_id' => $otherUser->id,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Paiement confirmé. Identité révélée.',
+                    'data' => [
+                        'status' => 'revealed',
+                        'other_participant' => [
+                            'id' => $otherUser->id,
+                            'username' => $otherUser->username,
+                            'first_name' => $otherUser->first_name,
+                            'last_name' => $otherUser->last_name,
+                            'full_name' => $otherUser->full_name,
+                            'avatar_url' => $otherUser->avatar_url,
+                        ],
+                    ],
+                ]);
+            }
+
+            // Si le paiement a échoué
+            if (isset($lygosStatus['status']) && in_array(strtolower($lygosStatus['status']), ['failed', 'cancelled', 'expired'])) {
+                $payment->update([
+                    'status' => 'failed',
+                    'failure_reason' => 'Transaction ' . $lygosStatus['status'],
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Le paiement a échoué.',
+                    'data' => [
+                        'status' => 'failed',
+                        'reason' => $lygosStatus['status'],
+                    ],
+                ], 400);
+            }
+
+            // Paiement toujours en attente
+            return response()->json([
+                'success' => true,
+                'message' => 'Paiement en cours de traitement.',
+                'data' => [
+                    'status' => 'processing',
+                    'payment_link' => $payment->metadata['lygos_link'] ?? null,
+                    'lygos_status' => $lygosStatus['status'] ?? null,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            $errorMessage = $e->getMessage();
+
+            // Si la transaction n'est pas trouvée
+            if (str_contains($errorMessage, 'Transaction not found') || str_contains($errorMessage, 'TRANSACTION_NOT_FOUND')) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Paiement en attente. Veuillez compléter le paiement sur votre téléphone.',
+                    'data' => [
+                        'status' => 'processing',
+                        'payment_link' => $payment->metadata['lygos_link'] ?? null,
+                    ],
+                ]);
+            }
+
+            // Si timeout de Lygos
+            if (str_contains($errorMessage, 'LYGOS_TIMEOUT')) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Vérification en cours. La connexion avec Lygos est lente, veuillez patienter...',
+                    'data' => [
+                        'status' => 'processing',
+                        'payment_link' => $payment->metadata['lygos_link'] ?? null,
+                        'lygos_timeout' => true,
+                    ],
+                ]);
+            }
+
+            Log::error('❌ [REVEAL CONV] Erreur lors de la vérification du statut', [
+                'payment_id' => $payment->id,
+                'error' => $errorMessage,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la vérification du paiement',
             ], 500);
         }
     }

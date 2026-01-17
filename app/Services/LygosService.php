@@ -106,9 +106,18 @@ class LygosService
             $response = Http::withHeaders([
                 'api-key' => $this->apiKey,
             ])
-            ->timeout(10) // Timeout de 10 secondes pour éviter les longues attentes
-            ->retry(2, 100) // Retry 2 fois avec 100ms entre chaque tentative
+            ->timeout(30) // Augmenté à 30 secondes car Lygos peut être très lent
+            ->retry(3, 1000) // 3 tentatives avec 1 seconde entre chaque
             ->get("{$this->baseUrl}/gateway/payin/{$orderId}");
+
+            // Si 404, la transaction n'existe vraiment pas
+            if ($response->status() === 404) {
+                Log::warning('⚠️ [LYGOS] Transaction 404 - pas encore créée ou introuvable', [
+                    'order_id' => $orderId,
+                ]);
+
+                throw new \Exception('TRANSACTION_NOT_FOUND');
+            }
 
             if ($response->failed()) {
                 Log::error('❌ [LYGOS] Échec vérification statut', [
@@ -124,20 +133,31 @@ class LygosService
             Log::info('✅ [LYGOS] Statut récupéré', [
                 'order_id' => $data['order_id'] ?? null,
                 'status' => $data['status'] ?? null,
+                'full_data' => $data,
             ]);
 
             return $data;
 
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('❌ [LYGOS] Timeout ou erreur de connexion lors de la vérification', [
+            // Timeout ou erreur réseau - différent d'un 404
+            Log::error('❌ [LYGOS] Timeout ou erreur réseau lors de la vérification', [
                 'order_id' => $orderId,
                 'message' => $e->getMessage(),
+                'type' => 'CONNECTION_TIMEOUT',
             ]);
 
-            throw new \Exception('TRANSACTION_NOT_FOUND');
+            // Retourner un statut temporaire au lieu de lever une exception
+            // Cela permet au frontend de continuer à réessayer
+            throw new \Exception('LYGOS_TIMEOUT');
 
         } catch (\Exception $e) {
+            // Si c'est déjà notre exception personnalisée, la relever telle quelle
+            if ($e->getMessage() === 'TRANSACTION_NOT_FOUND' || $e->getMessage() === 'LYGOS_TIMEOUT') {
+                throw $e;
+            }
+
             Log::error('❌ [LYGOS] Exception lors de la vérification', [
+                'order_id' => $orderId,
                 'message' => $e->getMessage(),
             ]);
 

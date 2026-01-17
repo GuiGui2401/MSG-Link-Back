@@ -24,9 +24,11 @@ class DatabaseSeeder extends Seeder
     public function runWithFakeData(): void
     {
         $this->call([
-            AdminSeeder::class,
             GiftSeeder::class,
             FakeDataSeeder::class,
+            LegalPagesContentSeeder::class,
+            SettingsSeeder::class,
+            LegalPagesSeeder::class,
         ]);
     }
 }
