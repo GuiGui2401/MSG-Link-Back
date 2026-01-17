@@ -3,7 +3,10 @@
 namespace Database\Seeders;
 
 use App\Models\Gift;
+use App\Models\GiftCategory;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class GiftSeeder extends Seeder
 {
@@ -12,6 +15,28 @@ class GiftSeeder extends Seeder
      */
     public function run(): void
     {
+        // Reset gifts data before seeding
+        Schema::disableForeignKeyConstraints();
+        DB::table('gift_transactions')->truncate();
+        DB::table('gifts')->truncate();
+        DB::table('gift_categories')->truncate();
+        Schema::enableForeignKeyConstraints();
+
+        $categories = collect([
+            'Romance',
+            'Amitié',
+            'Appréciation',
+            'Célébration',
+            'Premium',
+        ])->mapWithKeys(function (string $name) {
+            $category = GiftCategory::firstOrCreate(
+                ['name' => $name],
+                ['is_active' => true]
+            );
+
+            return [$name => $category->id];
+        });
+
         $gifts = [
             // Bronze (1000 FCFA)
             [
@@ -23,6 +48,7 @@ class GiftSeeder extends Seeder
                 'price' => 1000,
                 'tier' => Gift::TIER_BRONZE,
                 'sort_order' => 1,
+                'gift_category_id' => $categories['Romance'],
             ],
             [
                 'name' => 'Étoile',
@@ -33,6 +59,7 @@ class GiftSeeder extends Seeder
                 'price' => 1000,
                 'tier' => Gift::TIER_BRONZE,
                 'sort_order' => 2,
+                'gift_category_id' => $categories['Amitié'],
             ],
             [
                 'name' => 'Rose',
@@ -43,6 +70,7 @@ class GiftSeeder extends Seeder
                 'price' => 1000,
                 'tier' => Gift::TIER_BRONZE,
                 'sort_order' => 3,
+                'gift_category_id' => $categories['Romance'],
             ],
 
             // Silver (5000 FCFA)
@@ -55,6 +83,7 @@ class GiftSeeder extends Seeder
                 'price' => 5000,
                 'tier' => Gift::TIER_SILVER,
                 'sort_order' => 4,
+                'gift_category_id' => $categories['Appréciation'],
             ],
             [
                 'name' => 'Ours en peluche',
@@ -65,6 +94,7 @@ class GiftSeeder extends Seeder
                 'price' => 5000,
                 'tier' => Gift::TIER_SILVER,
                 'sort_order' => 5,
+                'gift_category_id' => $categories['Amitié'],
             ],
             [
                 'name' => 'Parfum',
@@ -75,6 +105,7 @@ class GiftSeeder extends Seeder
                 'price' => 5000,
                 'tier' => Gift::TIER_SILVER,
                 'sort_order' => 6,
+                'gift_category_id' => $categories['Célébration'],
             ],
 
             // Gold (25000 FCFA)
@@ -87,6 +118,7 @@ class GiftSeeder extends Seeder
                 'price' => 25000,
                 'tier' => Gift::TIER_GOLD,
                 'sort_order' => 7,
+                'gift_category_id' => $categories['Célébration'],
             ],
             [
                 'name' => 'Montre',
@@ -97,6 +129,7 @@ class GiftSeeder extends Seeder
                 'price' => 25000,
                 'tier' => Gift::TIER_GOLD,
                 'sort_order' => 8,
+                'gift_category_id' => $categories['Appréciation'],
             ],
             [
                 'name' => 'Champagne',
@@ -107,6 +140,7 @@ class GiftSeeder extends Seeder
                 'price' => 25000,
                 'tier' => Gift::TIER_GOLD,
                 'sort_order' => 9,
+                'gift_category_id' => $categories['Célébration'],
             ],
 
             // Diamond (50000 FCFA)
@@ -119,6 +153,7 @@ class GiftSeeder extends Seeder
                 'price' => 50000,
                 'tier' => Gift::TIER_DIAMOND,
                 'sort_order' => 10,
+                'gift_category_id' => $categories['Premium'],
             ],
             [
                 'name' => 'Couronne',
@@ -129,6 +164,7 @@ class GiftSeeder extends Seeder
                 'price' => 50000,
                 'tier' => Gift::TIER_DIAMOND,
                 'sort_order' => 11,
+                'gift_category_id' => $categories['Premium'],
             ],
             [
                 'name' => 'Yacht',
@@ -139,6 +175,7 @@ class GiftSeeder extends Seeder
                 'price' => 50000,
                 'tier' => Gift::TIER_DIAMOND,
                 'sort_order' => 12,
+                'gift_category_id' => $categories['Premium'],
             ],
         ];
 
