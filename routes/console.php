@@ -56,3 +56,9 @@ Schedule::command('sanctum:prune-expired --hours=720') // 30 jours
 Schedule::command('notifications:cleanup')
     ->weekly()
     ->withoutOverlapping();
+
+// Distribuer les revenus de monétisation tous les jours
+Schedule::command('monetization:distribute')
+    ->dailyAt('02:00')
+    ->withoutOverlapping()
+    ->runInBackground();

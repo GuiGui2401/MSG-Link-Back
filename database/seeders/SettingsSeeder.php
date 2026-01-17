@@ -125,6 +125,85 @@ class SettingsSeeder extends Seeder
                 'description' => 'Prix des cadeaux Diamond (en FCFA)',
             ],
 
+            // ==================== MONETISATION ====================
+            [
+                'key' => 'monetization_enabled',
+                'value' => '1',
+                'type' => 'boolean',
+                'group' => 'monetization',
+                'description' => 'Activer la monétisation',
+            ],
+            [
+                'key' => 'creator_fund_enabled',
+                'value' => '1',
+                'type' => 'boolean',
+                'group' => 'monetization',
+                'description' => 'Activer le Creator Fund',
+            ],
+            [
+                'key' => 'creator_fund_pool_amount',
+                'value' => '0',
+                'type' => 'decimal',
+                'group' => 'monetization',
+                'description' => 'Montant du Creator Fund par période (en FCFA)',
+            ],
+            [
+                'key' => 'creator_fund_period_days',
+                'value' => '30',
+                'type' => 'integer',
+                'group' => 'monetization',
+                'description' => 'Durée de la période Creator Fund (en jours)',
+            ],
+            [
+                'key' => 'ads_revenue_enabled',
+                'value' => '1',
+                'type' => 'boolean',
+                'group' => 'monetization',
+                'description' => 'Activer le partage des revenus publicitaires',
+            ],
+            [
+                'key' => 'ads_revenue_pool_amount',
+                'value' => '0',
+                'type' => 'decimal',
+                'group' => 'monetization',
+                'description' => 'Montant brut des revenus publicitaires par période (en FCFA)',
+            ],
+            [
+                'key' => 'ads_revenue_share_percent',
+                'value' => '50',
+                'type' => 'decimal',
+                'group' => 'monetization',
+                'description' => 'Part créateurs des revenus publicitaires (%)',
+            ],
+            [
+                'key' => 'engagement_view_weight',
+                'value' => '1',
+                'type' => 'decimal',
+                'group' => 'monetization',
+                'description' => 'Poids des vues dans le score d\'engagement',
+            ],
+            [
+                'key' => 'engagement_like_weight',
+                'value' => '3',
+                'type' => 'decimal',
+                'group' => 'monetization',
+                'description' => 'Poids des likes dans le score d\'engagement',
+            ],
+            [
+                'key' => 'monetization_min_payout',
+                'value' => '100',
+                'type' => 'decimal',
+                'group' => 'monetization',
+                'description' => 'Seuil minimum de paiement (en FCFA)',
+            ],
+            [
+                'key' => 'monetization_auto_payout',
+                'value' => '0',
+                'type' => 'boolean',
+                'group' => 'monetization',
+                'description' => 'Payer automatiquement les gains',
+            ],
+
             // ==================== WALLET ====================
             [
                 'key' => 'wallet_min_withdrawal',

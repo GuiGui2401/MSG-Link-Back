@@ -59,12 +59,19 @@ class GroupController extends Controller
             'description' => 'nullable|string|max:500',
             'is_public' => 'boolean',
             'max_members' => 'nullable|integer|min:2|max:200',
+            'avatar' => 'nullable|image|max:2048', // 2MB max
         ]);
 
         $user = $request->user();
 
         DB::beginTransaction();
         try {
+            // Gérer l'avatar si fourni
+            $avatarUrl = null;
+            if ($request->hasFile('avatar')) {
+                $avatarUrl = $request->file('avatar')->store('groups/avatars', 'public');
+            }
+
             // Créer le groupe
             $group = Group::create([
                 'name' => $validated['name'],
@@ -74,6 +81,7 @@ class GroupController extends Controller
                 'is_public' => $validated['is_public'] ?? false,
                 'max_members' => $validated['max_members'] ?? Group::MAX_MEMBERS_DEFAULT,
                 'members_count' => 1,
+                'avatar_url' => $avatarUrl,
             ]);
 
             // Ajouter le créateur comme admin
@@ -330,10 +338,12 @@ class GroupController extends Controller
 
         $canSeeIdentity = $user->is_premium ?? false;
 
-        // Charger la relation sender si premium
+        // Charger la relation sender si premium + replyToMessage
         $query = $group->messages()->orderBy('created_at', 'desc');
         if ($canSeeIdentity) {
-            $query->with('sender');
+            $query->with(['sender', 'replyToMessage']);
+        } else {
+            $query->with('replyToMessage');
         }
 
         $messages = $query->paginate($request->get('per_page', 50));
@@ -352,6 +362,16 @@ class GroupController extends Controller
             } else {
                 $message->sender_name = 'Anonyme';
                 $message->sender_initial = 'A';
+            }
+
+            // Ajouter les données du message auquel on répond
+            if ($message->replyToMessage) {
+                $message->reply_to_message = [
+                    'id' => $message->replyToMessage->id,
+                    'content' => $message->replyToMessage->content,
+                    'type' => $message->replyToMessage->type,
+                    'sender_anonymous_name' => $message->replyToMessage->sender_anonymous_name,
+                ];
             }
 
             return $message;
@@ -382,18 +402,55 @@ class GroupController extends Controller
         }
 
         $validated = $request->validate([
-            'content' => 'required|string|max:5000',
+            'content' => 'nullable|string|max:5000',
             'reply_to_message_id' => 'nullable|exists:group_messages,id',
+            'voice' => 'nullable|file|mimetypes:audio/mpeg,audio/mp3,audio/wav,audio/m4a,audio/x-m4a,audio/mp4,audio/aac,audio/x-aac,audio/ogg,audio/webm|max:10240',
+            'video' => 'nullable|mimetypes:video/mp4,video/quicktime,video/x-msvideo,video/webm|max:51200',
+            'image' => 'nullable|image|max:10240',
         ]);
 
-        // Créer le message
-        $message = GroupMessage::create([
+        // Vérifier qu'au moins un contenu est fourni
+        if (empty($validated['content']) && !$request->hasFile('voice') && !$request->hasFile('video') && !$request->hasFile('image')) {
+            return response()->json([
+                'message' => 'Veuillez fournir un message, un audio, une vidéo ou une image.',
+                'errors' => ['content' => ['Le contenu est requis si aucun média n\'est fourni.']],
+            ], 422);
+        }
+
+        $messageData = [
             'group_id' => $group->id,
             'sender_id' => $user->id,
-            'content' => $validated['content'],
+            'content' => $validated['content'] ?? '',
             'type' => GroupMessage::TYPE_TEXT,
             'reply_to_message_id' => $validated['reply_to_message_id'] ?? null,
-        ]);
+        ];
+
+        // Gérer l'upload de fichier vocal
+        if ($request->hasFile('voice')) {
+            $voice = $request->file('voice');
+            $path = $voice->store('group_messages/voices', 'public');
+            $messageData['media_url'] = $path;
+            $messageData['type'] = GroupMessage::TYPE_VOICE;
+        }
+
+        // Gérer l'upload de vidéo
+        if ($request->hasFile('video')) {
+            $video = $request->file('video');
+            $path = $video->store('group_messages/videos', 'public');
+            $messageData['media_url'] = $path;
+            $messageData['type'] = GroupMessage::TYPE_VIDEO;
+        }
+
+        // Gérer l'upload d'image
+        if ($request->hasFile('image')) {
+            $image = $request->file('image');
+            $path = $image->store('group_messages/images', 'public');
+            $messageData['media_url'] = $path;
+            $messageData['type'] = GroupMessage::TYPE_IMAGE;
+        }
+
+        // Créer le message
+        $message = GroupMessage::create($messageData);
 
         // Mettre à jour le groupe
         $group->updateAfterMessage();

@@ -22,6 +22,7 @@ class StoryResource extends JsonResource
 
         return [
             'id' => $this->id,
+            'user_id' => $this->user_id, // Toujours inclure l'ID réel pour la navigation
             'user' => [
                 'id' => $shouldRevealIdentity ? $this->user->id : null,
                 'username' => $shouldRevealIdentity ? $this->user->username : 'Anonyme',

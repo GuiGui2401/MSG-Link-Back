@@ -31,7 +31,7 @@ class MessageController extends Controller
         $user = $request->user();
 
         $messages = AnonymousMessage::forRecipient($user->id)
-            ->with('sender:id,first_name,last_name,username,avatar')
+            ->with(['sender:id,first_name,last_name,username,avatar', 'replyToMessage'])
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));
 
@@ -54,7 +54,7 @@ class MessageController extends Controller
         $user = $request->user();
 
         $messages = AnonymousMessage::fromSender($user->id)
-            ->with('recipient:id,first_name,last_name,username,avatar')
+            ->with(['recipient:id,first_name,last_name,username,avatar', 'replyToMessage'])
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));
 

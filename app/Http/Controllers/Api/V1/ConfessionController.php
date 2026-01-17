@@ -26,7 +26,7 @@ class ConfessionController extends Controller
     public function index(Request $request): JsonResponse
     {
         $confessions = Confession::publicApproved()
-            ->with('author:id,first_name')
+            ->with('author:id,first_name,last_name,username,avatar,is_premium,is_verified')
             ->withCount(['likedBy', 'comments'])
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));
@@ -104,6 +104,73 @@ class ConfessionController extends Controller
     }
 
     /**
+     * Confessions d'un utilisateur spécifique (publiques et approuvées)
+     */
+    public function userConfessions(Request $request, int $userId): JsonResponse
+    {
+        $confessions = Confession::where('author_id', $userId)
+            ->public()
+            ->approved()
+            ->where('is_anonymous', false) // Ne pas inclure les posts anonymes
+            ->with('author:id,first_name,last_name,username,avatar,is_premium,is_verified')
+            ->withCount(['likedBy', 'comments'])
+            ->orderBy('created_at', 'desc')
+            ->paginate($request->get('per_page', 20));
+
+        // Ajouter le flag "liked" pour l'utilisateur connecté
+        if ($request->user()) {
+            $confessions->getCollection()->transform(function ($confession) use ($request) {
+                $confession->is_liked = $confession->isLikedBy($request->user());
+                return $confession;
+            });
+        }
+
+        return response()->json([
+            'confessions' => ConfessionResource::collection($confessions),
+            'meta' => [
+                'current_page' => $confessions->currentPage(),
+                'last_page' => $confessions->lastPage(),
+                'per_page' => $confessions->perPage(),
+                'total' => $confessions->total(),
+            ],
+        ]);
+    }
+
+    /**
+     * Confessions likées par l'utilisateur courant
+     */
+    public function liked(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $confessions = Confession::whereHas('likedBy', function ($query) use ($user) {
+            $query->where('user_id', $user->id);
+        })
+            ->public()
+            ->approved()
+            ->with('author:id,first_name,last_name,username,avatar,is_premium,is_verified')
+            ->withCount(['likedBy', 'comments'])
+            ->orderBy('created_at', 'desc')
+            ->paginate($request->get('per_page', 20));
+
+        // Marquer toutes comme likées puisqu'on les récupère depuis les likes de l'utilisateur
+        $confessions->getCollection()->transform(function ($confession) {
+            $confession->is_liked = true;
+            return $confession;
+        });
+
+        return response()->json([
+            'confessions' => ConfessionResource::collection($confessions),
+            'meta' => [
+                'current_page' => $confessions->currentPage(),
+                'last_page' => $confessions->lastPage(),
+                'per_page' => $confessions->perPage(),
+                'total' => $confessions->total(),
+            ],
+        ]);
+    }
+
+    /**
      * Détail d'une confession
      */
     public function show(Request $request, Confession $confession): JsonResponse
@@ -128,7 +195,7 @@ class ConfessionController extends Controller
 
         // Incrémenter les vues (sauf pour l'auteur)
         if ($confession->author_id !== $user?->id) {
-            $confession->incrementViews();
+            $confession->incrementViews($user);
         }
 
         $confession->load('author:id,first_name,last_name,username,avatar');
@@ -154,6 +221,7 @@ class ConfessionController extends Controller
             'author_id' => $user->id,
             'content' => $validated['content'] ?? '',
             'type' => $validated['type'],
+            'is_anonymous' => $request->boolean('is_anonymous', false),
         ];
 
         // Gérer l'upload d'image
@@ -161,6 +229,13 @@ class ConfessionController extends Controller
             $image = $request->file('image');
             $path = $image->store('confessions', 'public');
             $confessionData['image'] = $path;
+        }
+
+        // Gérer l'upload de vidéo
+        if ($request->hasFile('video')) {
+            $video = $request->file('video');
+            $path = $video->store('confessions/videos', 'public');
+            $confessionData['video'] = $path;
         }
 
         // Si confession privée, vérifier le destinataire
@@ -225,6 +300,18 @@ class ConfessionController extends Controller
             return response()->json([
                 'message' => 'Accès non autorisé.',
             ], 403);
+        }
+
+        // Vérifier si la publication a une promotion active
+        $hasActivePromotion = \App\Models\PostPromotion::where('confession_id', $confession->id)
+            ->active()
+            ->exists();
+
+        if ($hasActivePromotion) {
+            return response()->json([
+                'message' => 'Impossible de supprimer cette publication car elle est actuellement en cours de promotion. Attendez la fin de la promotion ou annulez-la d\'abord.',
+                'has_active_promotion' => true,
+            ], 422);
         }
 
         $confession->delete();

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\StoryResource;
 use App\Models\PremiumSubscription;
 use App\Models\Story;
+use App\Models\StoryComment;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -122,8 +123,9 @@ class StoryController extends Controller
             ], 404);
         }
 
-        // Récupérer les stories actives de l'utilisateur
+        // Récupérer les stories actives de l'utilisateur avec les relations
         $stories = Story::forUser($user->id)
+            ->with('user:id,first_name,last_name,username,avatar')
             ->active()
             ->orderBy('created_at', 'asc')
             ->get();
@@ -153,13 +155,18 @@ class StoryController extends Controller
     }
 
     /**
-     * Mes stories
+     * Mes stories (actives uniquement)
      */
     public function myStories(Request $request): JsonResponse
     {
         $user = $request->user();
 
+        // Marquer les stories expirées d'abord
+        Story::markExpiredStories();
+
+        // Récupérer uniquement les stories actives (non expirées)
         $stories = Story::forUser($user->id)
+            ->active()
             ->with('viewedBy:id,first_name,last_name,username,avatar')
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));
@@ -209,11 +216,11 @@ class StoryController extends Controller
         $user = $request->user();
 
         $validator = Validator::make($request->all(), [
-            'type' => 'required|in:image,text',
-            'media' => 'required_if:type,image|file|max:2048', // 2MB max (frontend compresse à 1MB)
+            'type' => 'required|in:image,video,text',
+            'media' => 'required_if:type,image,video|file|max:51200', // 50MB max pour vidéos
             'content' => 'required_if:type,text|string|max:500',
             'background_color' => 'nullable|string|max:7', // Format hex: #RRGGBB
-            'duration' => 'nullable|integer|min:3|max:30', // 3 à 30 secondes
+            'duration' => 'nullable|integer|min:3|max:60', // 3 à 60 secondes pour les vidéos
         ]);
 
         if ($validator->fails()) {
@@ -232,15 +239,25 @@ class StoryController extends Controller
             'expires_at' => now()->addHours(24), // Expire après 24h
         ];
 
-        // Gestion du média (image uniquement)
-        if ($validated['type'] === 'image' && $request->hasFile('media')) {
+        // Gestion du média (image ou vidéo)
+        if (in_array($validated['type'], ['image', 'video']) && $request->hasFile('media')) {
             $media = $request->file('media');
 
-            // Valider le type MIME
-            if (!in_array($media->getMimeType(), ['image/jpeg', 'image/png', 'image/gif', 'image/webp'])) {
-                return response()->json([
-                    'message' => 'Le fichier doit être une image (JPEG, PNG, GIF, WebP).',
-                ], 422);
+            if ($validated['type'] === 'image') {
+                // Valider le type MIME pour les images
+                if (!in_array($media->getMimeType(), ['image/jpeg', 'image/png', 'image/gif', 'image/webp'])) {
+                    return response()->json([
+                        'message' => 'Le fichier doit être une image (JPEG, PNG, GIF, WebP).',
+                    ], 422);
+                }
+            } else {
+                // Valider le type MIME pour les vidéos
+                $allowedVideoMimes = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm', 'video/x-matroska'];
+                if (!in_array($media->getMimeType(), $allowedVideoMimes)) {
+                    return response()->json([
+                        'message' => 'Le fichier doit être une vidéo (MP4, MOV, AVI, WebM, MKV).',
+                    ], 422);
+                }
             }
 
             // Sauvegarder le média
@@ -364,5 +381,137 @@ class StoryController extends Controller
             'expired_stories' => $totalStories - $activeStories,
             'total_views' => $totalViews,
         ]);
+    }
+
+    // ==================== COMMENTS ====================
+
+    /**
+     * Obtenir les commentaires d'une story
+     */
+    public function getComments(Request $request, Story $story): JsonResponse
+    {
+        $comments = $story->comments()
+            ->with(['user:id,first_name,last_name,username,avatar,is_premium', 'replies.user:id,first_name,last_name,username,avatar,is_premium'])
+            ->orderBy('created_at', 'desc')
+            ->paginate($request->get('per_page', 20));
+
+        return response()->json([
+            'comments' => $comments->map(function ($comment) {
+                return $this->formatComment($comment);
+            }),
+            'meta' => [
+                'current_page' => $comments->currentPage(),
+                'last_page' => $comments->lastPage(),
+                'per_page' => $comments->perPage(),
+                'total' => $comments->total(),
+            ],
+        ]);
+    }
+
+    /**
+     * Ajouter un commentaire à une story
+     */
+    public function addComment(Request $request, Story $story): JsonResponse
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'content' => 'required|string|max:500',
+            'parent_id' => 'nullable|exists:story_comments,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Données invalides.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $validated = $validator->validated();
+
+        // Vérifier que le parent appartient à la même story
+        if (isset($validated['parent_id'])) {
+            $parentComment = StoryComment::find($validated['parent_id']);
+            if ($parentComment->story_id !== $story->id) {
+                return response()->json([
+                    'message' => 'Le commentaire parent n\'appartient pas à cette story.',
+                ], 422);
+            }
+        }
+
+        $comment = StoryComment::create([
+            'story_id' => $story->id,
+            'user_id' => $user->id,
+            'content' => $validated['content'],
+            'parent_id' => $validated['parent_id'] ?? null,
+        ]);
+
+        $comment->load('user:id,first_name,last_name,username,avatar,is_premium');
+
+        return response()->json([
+            'message' => 'Commentaire ajouté avec succès.',
+            'comment' => $this->formatComment($comment),
+        ], 201);
+    }
+
+    /**
+     * Supprimer un commentaire
+     */
+    public function deleteComment(Request $request, Story $story, StoryComment $comment): JsonResponse
+    {
+        $user = $request->user();
+
+        // Seul l'auteur du commentaire ou le propriétaire de la story peut supprimer
+        if ($comment->user_id !== $user->id && $story->user_id !== $user->id) {
+            return response()->json([
+                'message' => 'Accès non autorisé.',
+            ], 403);
+        }
+
+        $comment->delete();
+
+        return response()->json([
+            'message' => 'Commentaire supprimé avec succès.',
+        ]);
+    }
+
+    /**
+     * Formater un commentaire pour la réponse
+     */
+    private function formatComment(StoryComment $comment): array
+    {
+        $formatted = [
+            'id' => $comment->id,
+            'content' => $comment->content,
+            'likes_count' => $comment->likes_count,
+            'created_at' => $comment->created_at->toIso8601String(),
+            'user' => $comment->user ? [
+                'id' => $comment->user->id,
+                'username' => $comment->user->username,
+                'full_name' => $comment->user->full_name,
+                'avatar_url' => $comment->user->avatar_url,
+                'is_premium' => $comment->user->is_premium,
+            ] : null,
+        ];
+
+        if ($comment->relationLoaded('replies')) {
+            $formatted['replies'] = $comment->replies->map(function ($reply) {
+                return [
+                    'id' => $reply->id,
+                    'content' => $reply->content,
+                    'likes_count' => $reply->likes_count,
+                    'created_at' => $reply->created_at->toIso8601String(),
+                    'user' => $reply->user ? [
+                        'id' => $reply->user->id,
+                        'username' => $reply->user->username,
+                        'full_name' => $reply->user->full_name,
+                        'avatar_url' => $reply->user->avatar_url,
+                        'is_premium' => $reply->user->is_premium,
+                    ] : null,
+                ];
+            });
+        }
+
+        return $formatted;
     }
 }

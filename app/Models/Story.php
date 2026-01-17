@@ -124,6 +124,22 @@ class Story extends Model
     }
 
     /**
+     * Commentaires publics de la story
+     */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(StoryComment::class)->whereNull('parent_id');
+    }
+
+    /**
+     * Tous les commentaires (incluant réponses)
+     */
+    public function allComments(): HasMany
+    {
+        return $this->hasMany(StoryComment::class);
+    }
+
+    /**
      * Check if story is active
      */
     public function isActive(): bool

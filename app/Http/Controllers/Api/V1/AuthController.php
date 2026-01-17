@@ -34,7 +34,7 @@ class AuthController extends Controller
         // Générer un username unique
         $username = User::generateUsername(
             $validated['first_name'],
-            $request->input('last_name', '')
+            $request->input('last_name') ?? ''
         );
 
         \Log::info('👤 [AUTH_CONTROLLER] Username généré: ' . $username);
@@ -48,7 +48,7 @@ class AuthController extends Controller
 
         $user = User::create([
             'first_name' => $validated['first_name'],
-            'last_name' => $request->input('last_name', ''),
+            'last_name' => $request->input('last_name') ?? '',
             'username' => $username,
             'email' => $email,
             'phone' => $validated['phone'],

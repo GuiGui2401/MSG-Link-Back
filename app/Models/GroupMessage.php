@@ -17,6 +17,7 @@ class GroupMessage extends Model
         'sender_id',
         'content',
         'type',
+        'media_url',
         'reply_to_message_id',
     ];
 
@@ -27,6 +28,7 @@ class GroupMessage extends Model
 
     protected $appends = [
         'sender_anonymous_name',
+        'media_full_url',
     ];
 
     /**
@@ -39,6 +41,8 @@ class GroupMessage extends Model
      */
     const TYPE_TEXT = 'text';
     const TYPE_IMAGE = 'image';
+    const TYPE_VOICE = 'voice';
+    const TYPE_VIDEO = 'video';
     const TYPE_SYSTEM = 'system';
 
     // ==================== RELATIONS ====================
@@ -114,12 +118,37 @@ class GroupMessage extends Model
     }
 
     /**
+     * URL complète du média
+     */
+    public function getMediaFullUrlAttribute(): ?string
+    {
+        if (!$this->media_url) {
+            return null;
+        }
+
+        // Si c'est déjà une URL complète
+        if (str_starts_with($this->media_url, 'http')) {
+            return $this->media_url;
+        }
+
+        return asset('storage/' . $this->media_url);
+    }
+
+    /**
      * Aperçu du contenu du message (déchiffré et tronqué)
      */
     public function getContentPreviewAttribute(): string
     {
         if ($this->type === self::TYPE_IMAGE) {
             return '📷 Image';
+        }
+
+        if ($this->type === self::TYPE_VOICE) {
+            return '🎤 Message vocal';
+        }
+
+        if ($this->type === self::TYPE_VIDEO) {
+            return '🎬 Vidéo';
         }
 
         if ($this->type === self::TYPE_SYSTEM) {

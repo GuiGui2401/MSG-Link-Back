@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 use App\Traits\Encryptable;
 use App\Traits\Reportable;
 
@@ -20,6 +21,7 @@ class Confession extends Model
         'recipient_id',
         'content',
         'image',
+        'video',
         'type',
         'status',
         'moderated_by',
@@ -29,6 +31,7 @@ class Confession extends Model
         'revealed_at',
         'likes_count',
         'views_count',
+        'is_anonymous',
     ];
 
     protected $casts = [
@@ -37,6 +40,7 @@ class Confession extends Model
         'revealed_at' => 'datetime',
         'likes_count' => 'integer',
         'views_count' => 'integer',
+        'is_anonymous' => 'boolean',
     ];
 
     /**
@@ -155,6 +159,23 @@ class Confession extends Model
     }
 
     /**
+     * URL complète de la vidéo
+     */
+    public function getVideoUrlAttribute(): ?string
+    {
+        if (!$this->video) {
+            return null;
+        }
+
+        // Si c'est déjà une URL complète
+        if (str_starts_with($this->video, 'http')) {
+            return $this->video;
+        }
+
+        return asset('storage/' . $this->video);
+    }
+
+    /**
      * La confession est-elle publique ?
      */
     public function getIsPublicAttribute(): bool
@@ -212,6 +233,22 @@ class Confession extends Model
     {
         return $query->where('type', self::TYPE_PUBLIC)
             ->where('status', self::STATUS_APPROVED);
+    }
+
+    /**
+     * Confessions publiques
+     */
+    public function scopePublic($query)
+    {
+        return $query->where('type', self::TYPE_PUBLIC);
+    }
+
+    /**
+     * Confessions approuvées
+     */
+    public function scopeApproved($query)
+    {
+        return $query->where('status', self::STATUS_APPROVED);
     }
 
     /**
@@ -277,10 +314,34 @@ class Confession extends Model
     }
 
     /**
-     * Incrémenter le compteur de vues
+     * Incrémenter le compteur de vues (une seule fois par utilisateur)
      */
-    public function incrementViews(): void
+    public function incrementViews(?User $viewer = null): void
     {
+        // Ne pas compter les vues pour les utilisateurs non connectés
+        if (!$viewer) {
+            return;
+        }
+
+        // Vérifier si l'utilisateur a déjà vu cette confession
+        $alreadyViewed = DB::table('confession_views')
+            ->where('confession_id', $this->id)
+            ->where('user_id', $viewer->id)
+            ->exists();
+
+        if ($alreadyViewed) {
+            return;
+        }
+
+        // Enregistrer la vue
+        DB::table('confession_views')->insert([
+            'confession_id' => $this->id,
+            'user_id' => $viewer->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Incrémenter le compteur
         $this->increment('views_count');
     }
 

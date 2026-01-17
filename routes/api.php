@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\LegalPageController;
 use App\Http\Controllers\Api\V1\FollowController;
 use App\Http\Controllers\Api\V1\StoryReplyController;
 use App\Http\Controllers\Api\V1\PostPromotionController;
+use App\Http\Controllers\Api\V1\MonetizationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -52,6 +53,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/users/by-username/{username}', [UserController::class, 'show']);
     Route::get('/users/by-id/{id}', [UserController::class, 'showById']);
     Route::get('/users/{username}', [UserController::class, 'show'])->where('username', '^(?!dashboard|profile|settings|blocked|stats).*$');
+    Route::get('/users/{userId}/confessions', [ConfessionController::class, 'userConfessions'])->where('userId', '[0-9]+');
 
     // ==================== PUBLIC CONFESSIONS FEED ====================
     Route::get('/confessions', [ConfessionController::class, 'index']);
@@ -156,6 +158,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('confessions')->group(function () {
             Route::get('/received', [ConfessionController::class, 'received']);
             Route::get('/sent', [ConfessionController::class, 'sent']);
+            Route::get('/liked', [ConfessionController::class, 'liked']);
             Route::get('/stats', [ConfessionController::class, 'stats']);
             Route::post('/', [ConfessionController::class, 'store']);
             Route::post('/{confession}/like', [ConfessionController::class, 'like']);
@@ -250,6 +253,13 @@ Route::prefix('v1')->group(function () {
             Route::delete('/withdrawals/{withdrawal}', [WalletController::class, 'cancelWithdrawal']);
         });
 
+        // ==================== MONETISATION ====================
+        Route::prefix('monetization')->group(function () {
+            Route::get('/overview', [MonetizationController::class, 'overview']);
+            Route::get('/payouts', [MonetizationController::class, 'payouts']);
+            Route::get('/settings', [MonetizationController::class, 'settings']);
+        });
+
         // ==================== PAYMENT PROVIDERS CONFIG ====================
         Route::get('/payment-providers/config', [\App\Http\Controllers\Api\V1\PaymentProviderController::class, 'getConfig']);
 
@@ -287,6 +297,11 @@ Route::prefix('v1')->group(function () {
             Route::get('/{story}/replies', [StoryReplyController::class, 'index']);
             Route::post('/{story}/replies', [StoryReplyController::class, 'store']);
             Route::delete('/replies/{reply}', [StoryReplyController::class, 'destroy']);
+
+            // Story Comments (public comments)
+            Route::get('/{story}/comments', [StoryController::class, 'getComments']);
+            Route::post('/{story}/comments', [StoryController::class, 'addComment']);
+            Route::delete('/{story}/comments/{comment}', [StoryController::class, 'deleteComment']);
         });
 
         // ==================== FOLLOWS ====================
