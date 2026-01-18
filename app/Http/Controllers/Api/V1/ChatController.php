@@ -20,6 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ChatController extends Controller
@@ -184,14 +185,54 @@ class ChatController extends Controller
             ], 422);
         }
 
-        // Créer le message
-        $message = ChatMessage::create([
+        $validated = $request->validated();
+
+        $messageData = [
             'conversation_id' => $conversation->id,
             'sender_id' => $user->id,
-            'content' => $request->validated()['content'],
+            'content' => $validated['content'] ?? '',
             'type' => ChatMessage::TYPE_TEXT,
-            'anonymous_message_id' => $request->validated()['reply_to_id'] ?? null,
-        ]);
+            'anonymous_message_id' => $validated['reply_to_id'] ?? null,
+        ];
+
+        if ($request->hasFile('voice')) {
+            $voice = $request->file('voice');
+            $path = $voice->store('chat_messages/voices', 'public');
+            $messageData['voice_url'] = $path;
+            $messageData['type'] = ChatMessage::TYPE_VOICE;
+            Log::info('[ChatMessage] voice uploaded', [
+                'conversation_id' => $conversation->id,
+                'path' => $path,
+                'exists' => Storage::disk('public')->exists($path),
+            ]);
+        }
+
+        if ($request->hasFile('video')) {
+            $video = $request->file('video');
+            $path = $video->store('chat_messages/videos', 'public');
+            $messageData['video_url'] = $path;
+            $messageData['type'] = ChatMessage::TYPE_VIDEO;
+            Log::info('[ChatMessage] video uploaded', [
+                'conversation_id' => $conversation->id,
+                'path' => $path,
+                'exists' => Storage::disk('public')->exists($path),
+            ]);
+        }
+
+        if ($request->hasFile('image')) {
+            $image = $request->file('image');
+            $path = $image->store('chat_messages/images', 'public');
+            $messageData['image_url'] = $path;
+            $messageData['type'] = ChatMessage::TYPE_IMAGE;
+            Log::info('[ChatMessage] image uploaded', [
+                'conversation_id' => $conversation->id,
+                'path' => $path,
+                'exists' => Storage::disk('public')->exists($path),
+            ]);
+        }
+
+        // Créer le message
+        $message = ChatMessage::create($messageData);
 
         // Mettre à jour la conversation
         $conversation->updateAfterMessage();

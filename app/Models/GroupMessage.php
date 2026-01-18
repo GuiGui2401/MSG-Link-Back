@@ -131,7 +131,12 @@ class GroupMessage extends Model
             return $this->media_url;
         }
 
-        return asset('storage/' . $this->media_url);
+        $baseUrl = config('app.url');
+        if (request()) {
+            $baseUrl = request()->getSchemeAndHttpHost();
+        }
+
+        return rtrim($baseUrl, '/') . '/storage/' . ltrim($this->media_url, '/');
     }
 
     /**

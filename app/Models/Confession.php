@@ -155,7 +155,12 @@ class Confession extends Model
             return $this->image;
         }
 
-        return asset('storage/' . $this->image);
+        $baseUrl = config('app.url');
+        if (request()) {
+            $baseUrl = request()->getSchemeAndHttpHost();
+        }
+
+        return rtrim($baseUrl, '/') . '/storage/' . ltrim($this->image, '/');
     }
 
     /**
@@ -172,7 +177,12 @@ class Confession extends Model
             return $this->video;
         }
 
-        return asset('storage/' . $this->video);
+        $baseUrl = config('app.url');
+        if (request()) {
+            $baseUrl = request()->getSchemeAndHttpHost();
+        }
+
+        return rtrim($baseUrl, '/') . '/storage/' . ltrim($this->video, '/');
     }
 
     /**

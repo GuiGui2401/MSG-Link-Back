@@ -97,6 +97,27 @@ class Group extends Model
         return "{$appUrl}/groups/join/{$this->invite_code}";
     }
 
+    /**
+     * URL complète de l'avatar du groupe
+     */
+    public function getAvatarUrlAttribute($value): ?string
+    {
+        if (!$value) {
+            return null;
+        }
+
+        if (str_starts_with($value, 'http')) {
+            return $value;
+        }
+
+        $baseUrl = config('app.url');
+        if (request()) {
+            $baseUrl = request()->getSchemeAndHttpHost();
+        }
+
+        return rtrim($baseUrl, '/') . '/storage/' . ltrim($value, '/');
+    }
+
     // ==================== SCOPES ====================
 
     /**

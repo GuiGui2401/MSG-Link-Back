@@ -137,6 +137,22 @@ class ConfessionController extends Controller
     }
 
     /**
+     * Confessions d'un utilisateur par username (publiques et approuvées)
+     */
+    public function userConfessionsByUsername(Request $request, string $username): JsonResponse
+    {
+        $user = User::where('username', $username)->first();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'Utilisateur non trouvé.',
+            ], 404);
+        }
+
+        return $this->userConfessions($request, $user->id);
+    }
+
+    /**
      * Confessions likées par l'utilisateur courant
      */
     public function liked(Request $request): JsonResponse
@@ -175,7 +191,7 @@ class ConfessionController extends Controller
      */
     public function show(Request $request, Confession $confession): JsonResponse
     {
-        $user = $request->user();
+        $user = $request->user() ?? auth('sanctum')->user();
 
         // Vérifier l'accès
         if ($confession->is_private) {
@@ -454,14 +470,39 @@ class ConfessionController extends Controller
         $currentUserId = $request->user()?->id;
 
         $comments = $confession->comments()
-            ->with('author:id,first_name,username,avatar')
+            ->with([
+                'author:id,first_name,username,avatar',
+                'parent.author:id,first_name,username,avatar',
+            ])
             ->orderBy('created_at', 'asc')
             ->get()
             ->map(function ($comment) use ($currentUserId) {
+                $parent = $comment->parent;
+                $parentPayload = null;
+                if ($parent) {
+                    $parentPayload = [
+                        'id' => $parent->id,
+                        'content' => $parent->getDecryptedAttribute('content') ?? $parent->content,
+                        'is_anonymous' => $parent->is_anonymous,
+                        'author' => $parent->is_anonymous ? [
+                            'name' => 'Anonyme',
+                            'initial' => '?',
+                            'avatar_url' => null,
+                        ] : [
+                            'id' => $parent->author->id,
+                            'name' => $parent->author->first_name,
+                            'username' => $parent->author->username,
+                            'initial' => $parent->author->initial,
+                            'avatar_url' => $parent->author->avatar_url,
+                        ],
+                    ];
+                }
                 return [
                     'id' => $comment->id,
                     'content' => $comment->getDecryptedAttribute('content') ?? $comment->content,
                     'is_anonymous' => $comment->is_anonymous,
+                    'parent_id' => $comment->parent_id,
+                    'parent' => $parentPayload,
                     'author' => $comment->is_anonymous ? [
                         'name' => 'Anonyme',
                         'initial' => '?',
@@ -514,10 +555,25 @@ class ConfessionController extends Controller
             'content' => 'required_without:image|string|max:1000',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:10240',
             'is_anonymous' => 'boolean',
+            'parent_id' => 'nullable|integer',
         ]);
+
+        $parentId = $validated['parent_id'] ?? null;
+        $parentComment = null;
+        if ($parentId) {
+            $parentComment = ConfessionComment::where('confession_id', $confession->id)
+                ->where('id', $parentId)
+                ->first();
+            if (!$parentComment) {
+                return response()->json([
+                    'message' => 'Commentaire parent introuvable.',
+                ], 404);
+            }
+        }
 
         $comment = $confession->comments()->create([
             'author_id' => $user->id,
+            'parent_id' => $parentComment?->id,
             'content' => $validated['content'] ?? '',
             'is_anonymous' => $validated['is_anonymous'] ?? false,
         ]);
@@ -538,6 +594,23 @@ class ConfessionController extends Controller
                 'id' => $comment->id,
                 'content' => $comment->getDecryptedAttribute('content') ?? $comment->content,
                 'is_anonymous' => $comment->is_anonymous,
+                'parent_id' => $comment->parent_id,
+                'parent' => $parentComment ? [
+                    'id' => $parentComment->id,
+                    'content' => $parentComment->getDecryptedAttribute('content') ?? $parentComment->content,
+                    'is_anonymous' => $parentComment->is_anonymous,
+                    'author' => $parentComment->is_anonymous ? [
+                        'name' => 'Anonyme',
+                        'initial' => '?',
+                        'avatar_url' => null,
+                    ] : [
+                        'id' => $parentComment->author->id,
+                        'name' => $parentComment->author->first_name,
+                        'username' => $parentComment->author->username,
+                        'initial' => $parentComment->author->initial,
+                        'avatar_url' => $parentComment->author->avatar_url,
+                    ],
+                ] : null,
                 'media_url' => $comment->media_url,
                 'media_full_url' => $comment->media_full_url,
                 'media_type' => $comment->media_type,

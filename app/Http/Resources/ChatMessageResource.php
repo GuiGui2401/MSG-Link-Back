@@ -39,6 +39,8 @@ class ChatMessageResource extends JsonResource
             'conversation_id' => $this->conversation_id,
             'content' => $this->content,
             'type' => $this->type,
+            'media_url' => $this->media_url,
+            'media_full_url' => $this->media_full_url,
             'is_mine' => $isMine,
 
             // Expéditeur

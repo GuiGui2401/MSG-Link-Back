@@ -15,6 +15,7 @@ class ConfessionComment extends Model
     protected $fillable = [
         'confession_id',
         'author_id',
+        'parent_id',
         'content',
         'is_anonymous',
         'media_url',
@@ -50,6 +51,14 @@ class ConfessionComment extends Model
     public function author(): BelongsTo
     {
         return $this->belongsTo(User::class, 'author_id');
+    }
+
+    /**
+     * Commentaire parent (réponse)
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(ConfessionComment::class, 'parent_id');
     }
 
     // ==================== ACCESSORS ====================

@@ -52,17 +52,19 @@ Route::prefix('v1')->group(function () {
     // ==================== PUBLIC USER PROFILE ====================
     Route::get('/users/by-username/{username}', [UserController::class, 'show']);
     Route::get('/users/by-id/{id}', [UserController::class, 'showById']);
-    Route::get('/users/{username}', [UserController::class, 'show'])->where('username', '^(?!dashboard|profile|settings|blocked|stats).*$');
     Route::get('/users/{userId}/confessions', [ConfessionController::class, 'userConfessions'])->where('userId', '[0-9]+');
+    Route::get('/users/{username}/confessions', [ConfessionController::class, 'userConfessionsByUsername'])
+        ->where('username', '^[A-Za-z0-9_\\.]+$');
+    Route::get('/users/{username}', [UserController::class, 'show'])->where('username', '^(?!dashboard|profile|settings|blocked|stats).*$');
 
     // ==================== PUBLIC CONFESSIONS FEED ====================
     Route::get('/confessions', [ConfessionController::class, 'index']);
-    Route::get('/confessions/{confession}', [ConfessionController::class, 'show']);
-    Route::get('/confessions/{confession}/comments', [ConfessionController::class, 'getComments']);
+    Route::get('/confessions/{confession}', [ConfessionController::class, 'show'])->whereNumber('confession');
+    Route::get('/confessions/{confession}/comments', [ConfessionController::class, 'getComments'])->whereNumber('confession');
 
     // ==================== PUBLIC GIFTS CATALOG ====================
     Route::get('/gifts', [GiftController::class, 'index']);
-    Route::get('/gifts/{gift}', [GiftController::class, 'show']);
+    Route::get('/gifts/{gift}', [GiftController::class, 'show'])->whereNumber('gift');
     Route::get('/gift-categories', [GiftController::class, 'getCategories']);
     Route::get('/gift-categories/{categoryId}/gifts', [GiftController::class, 'getGiftsByCategory']);
 

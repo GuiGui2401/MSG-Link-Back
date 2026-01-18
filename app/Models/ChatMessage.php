@@ -17,6 +17,9 @@ class ChatMessage extends Model
         'sender_id',
         'content',
         'type',
+        'image_url',
+        'voice_url',
+        'video_url',
         'gift_transaction_id',
         'anonymous_message_id',
         'is_read',
@@ -26,6 +29,11 @@ class ChatMessage extends Model
     protected $casts = [
         'is_read' => 'boolean',
         'read_at' => 'datetime',
+    ];
+
+    protected $appends = [
+        'media_url',
+        'media_full_url',
     ];
 
     /**
@@ -39,6 +47,9 @@ class ChatMessage extends Model
     const TYPE_TEXT = 'text';
     const TYPE_GIFT = 'gift';
     const TYPE_SYSTEM = 'system';
+    const TYPE_IMAGE = 'image';
+    const TYPE_VOICE = 'voice';
+    const TYPE_VIDEO = 'video';
 
     // ==================== RELATIONS ====================
 
@@ -104,6 +115,18 @@ class ChatMessage extends Model
             return '🎁 Cadeau envoyé';
         }
 
+        if ($this->type === self::TYPE_IMAGE) {
+            return '📷 Image';
+        }
+
+        if ($this->type === self::TYPE_VOICE) {
+            return '🎤 Message vocal';
+        }
+
+        if ($this->type === self::TYPE_VIDEO) {
+            return '🎬 Vidéo';
+        }
+
         if ($this->type === self::TYPE_SYSTEM) {
             // Le contenu système n'est pas chiffré
             return $this->attributes['content'] ?? '';
@@ -133,6 +156,41 @@ class ChatMessage extends Model
     public function getIsSystemAttribute(): bool
     {
         return $this->type === self::TYPE_SYSTEM;
+    }
+
+    /**
+     * URL du média selon le type
+     */
+    public function getMediaUrlAttribute(): ?string
+    {
+        return match ($this->type) {
+            self::TYPE_IMAGE => $this->image_url,
+            self::TYPE_VOICE => $this->voice_url,
+            self::TYPE_VIDEO => $this->video_url,
+            default => null,
+        };
+    }
+
+    /**
+     * URL complète du média selon le type
+     */
+    public function getMediaFullUrlAttribute(): ?string
+    {
+        $mediaUrl = $this->media_url;
+        if (!$mediaUrl) {
+            return null;
+        }
+
+        if (str_starts_with($mediaUrl, 'http')) {
+            return $mediaUrl;
+        }
+
+        $baseUrl = config('app.url');
+        if (request()) {
+            $baseUrl = request()->getSchemeAndHttpHost();
+        }
+
+        return rtrim($baseUrl, '/') . '/storage/' . ltrim($mediaUrl, '/');
     }
 
     // ==================== SCOPES ====================

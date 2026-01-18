@@ -11,6 +11,7 @@ use App\Events\GroupMessageSent;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
@@ -386,6 +387,13 @@ class GroupController extends Controller
             return $message;
         });
 
+        Log::info('[GroupMessages] list', [
+            'group_id' => $group->id,
+            'host' => $request->getSchemeAndHttpHost(),
+            'sample_media_url' => $messages->items()[0]->media_url ?? null,
+            'sample_media_full_url' => $messages->items()[0]->media_full_url ?? null,
+        ]);
+
         return response()->json([
             'messages' => $messages->items(),
             'meta' => [
@@ -440,6 +448,11 @@ class GroupController extends Controller
             $path = $voice->store('group_messages/voices', 'public');
             $messageData['media_url'] = $path;
             $messageData['type'] = GroupMessage::TYPE_VOICE;
+            Log::info('[GroupMessage] voice uploaded', [
+                'group_id' => $group->id,
+                'path' => $path,
+                'exists' => Storage::disk('public')->exists($path),
+            ]);
         }
 
         // Gérer l'upload de vidéo
@@ -448,6 +461,11 @@ class GroupController extends Controller
             $path = $video->store('group_messages/videos', 'public');
             $messageData['media_url'] = $path;
             $messageData['type'] = GroupMessage::TYPE_VIDEO;
+            Log::info('[GroupMessage] video uploaded', [
+                'group_id' => $group->id,
+                'path' => $path,
+                'exists' => Storage::disk('public')->exists($path),
+            ]);
         }
 
         // Gérer l'upload d'image
@@ -456,6 +474,11 @@ class GroupController extends Controller
             $path = $image->store('group_messages/images', 'public');
             $messageData['media_url'] = $path;
             $messageData['type'] = GroupMessage::TYPE_IMAGE;
+            Log::info('[GroupMessage] image uploaded', [
+                'group_id' => $group->id,
+                'path' => $path,
+                'exists' => Storage::disk('public')->exists($path),
+            ]);
         }
 
         // Créer le message
