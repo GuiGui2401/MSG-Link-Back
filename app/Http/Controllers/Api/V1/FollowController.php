@@ -14,7 +14,7 @@ class FollowController extends Controller
      */
     public function follow(Request $request, string $username): JsonResponse
     {
-        $user = User::where('username', $username)->firstOrFail();
+        $user = $this->resolveUser($request, $username);
         $currentUser = $request->user();
 
         if ($currentUser->id === $user->id) {
@@ -46,7 +46,7 @@ class FollowController extends Controller
      */
     public function unfollow(Request $request, string $username): JsonResponse
     {
-        $user = User::where('username', $username)->firstOrFail();
+        $user = $this->resolveUser($request, $username);
         $currentUser = $request->user();
 
         $unfollowed = $currentUser->unfollow($user);
@@ -64,7 +64,7 @@ class FollowController extends Controller
      */
     public function followers(Request $request, string $username): JsonResponse
     {
-        $user = User::where('username', $username)->firstOrFail();
+        $user = $this->resolveUser($request, $username);
         $currentUser = $request->user();
 
         $followers = $user->followers()
@@ -88,7 +88,7 @@ class FollowController extends Controller
      */
     public function following(Request $request, string $username): JsonResponse
     {
-        $user = User::where('username', $username)->firstOrFail();
+        $user = $this->resolveUser($request, $username);
         $currentUser = $request->user();
 
         $following = $user->following()
@@ -112,7 +112,7 @@ class FollowController extends Controller
      */
     public function checkFollowing(Request $request, string $username): JsonResponse
     {
-        $user = User::where('username', $username)->firstOrFail();
+        $user = $this->resolveUser($request, $username);
         $currentUser = $request->user();
 
         return response()->json([
@@ -120,5 +120,42 @@ class FollowController extends Controller
             'is_following' => $currentUser->isFollowing($user),
             'is_followed_by' => $user->isFollowing($currentUser),
         ]);
+    }
+
+    private function resolveUser(Request $request, string $identifier): User
+    {
+        $normalized = trim($identifier);
+        $query = User::withTrashed();
+
+        $user = $query->where('username', $normalized)->first();
+        if (!$user) {
+            $user = $query
+                ->whereRaw('LOWER(TRIM(username)) = ?', [strtolower($normalized)])
+                ->first();
+        }
+        if (!$user) {
+            $user = $query->where('email', $normalized)->first();
+        }
+        if (!$user) {
+            $user = $query->where('phone', $normalized)->first();
+        }
+        if (!$user && ctype_digit($normalized)) {
+            $user = $query->find((int) $normalized);
+        }
+        if (!$user && $request->user()) {
+            $authUser = $request->user();
+            if (
+                ($authUser->username && strtolower($authUser->username) === strtolower($normalized)) ||
+                (string) $authUser->id === $normalized
+            ) {
+                $user = $authUser;
+            }
+        }
+
+        if (!$user) {
+            abort(404, 'Utilisateur non trouvé.');
+        }
+
+        return $user;
     }
 }

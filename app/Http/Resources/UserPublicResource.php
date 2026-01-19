@@ -9,6 +9,7 @@ class UserPublicResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $authUser = $request->user() ?? auth('sanctum')->user();
         // Récupérer les settings de visibilité
         $settings = $this->settings ?? [];
         $showName = $settings['show_name_on_posts'] ?? true;
@@ -36,8 +37,8 @@ class UserPublicResource extends JsonResource
             'followers_count' => $this->followers_count ?? $this->followers()->count(),
             'following_count' => $this->following_count ?? $this->following()->count(),
             'confessions_count' => $this->confessions_count ?? $this->confessionsWritten()->count(),
-            'is_following' => $request->user() ? $request->user()->isFollowing($this->resource) : false,
-            'is_followed_by' => $request->user() ? $this->resource->isFollowing($request->user()) : false,
+            'is_following' => $authUser ? $authUser->isFollowing($this->resource) : false,
+            'is_followed_by' => $authUser ? $this->resource->isFollowing($authUser) : false,
         ];
     }
 }

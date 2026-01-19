@@ -60,6 +60,7 @@ class GroupController extends Controller
             'name' => 'required|string|max:100',
             'description' => 'nullable|string|max:500',
             'is_public' => 'boolean',
+            'only_owner_can_post' => 'sometimes|boolean',
             'max_members' => 'nullable|integer|min:2|max:200',
             'avatar' => 'nullable|image|max:2048', // 2MB max
         ]);
@@ -81,6 +82,7 @@ class GroupController extends Controller
                 'creator_id' => $user->id,
                 'invite_code' => Group::generateInviteCode(),
                 'is_public' => $validated['is_public'] ?? false,
+                'only_owner_can_post' => $validated['only_owner_can_post'] ?? false,
                 'max_members' => $validated['max_members'] ?? Group::MAX_MEMBERS_DEFAULT,
                 'members_count' => 1,
                 'avatar_url' => $avatarUrl,
@@ -155,6 +157,7 @@ class GroupController extends Controller
             'name' => 'sometimes|string|max:100',
             'description' => 'nullable|string|max:500',
             'is_public' => 'sometimes|boolean',
+            'only_owner_can_post' => 'sometimes|boolean',
             'max_members' => 'sometimes|integer|min:2|max:200',
             'avatar' => 'nullable|image|max:2048',
         ]);
@@ -343,6 +346,12 @@ class GroupController extends Controller
         if (!$group->hasMember($user)) {
             return response()->json([
                 'message' => 'Accès non autorisé.',
+            ], 403);
+        }
+
+        if ($group->only_owner_can_post && $group->creator_id !== $user->id) {
+            return response()->json([
+                'message' => 'Seul le propriétaire du groupe peut écrire.',
             ], 403);
         }
 

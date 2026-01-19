@@ -13,6 +13,8 @@ class ConfessionResource extends JsonResource
         // Auteur affiché si: post public ET pas anonyme, OU identité révélée
         $shouldShowAuthor = ($this->is_public && !$this->is_anonymous) || $this->is_identity_revealed;
 
+        $promotion = $this->activePromotion();
+
         return [
             'id' => $this->id,
             'content' => $this->content,
@@ -40,6 +42,14 @@ class ConfessionResource extends JsonResource
                 'is_verified' => $this->author->is_verified ?? false,
             ] : null,
             'is_identity_revealed' => $this->is_identity_revealed,
+            'is_sponsored' => $this->isPromoted(),
+            'promotion_id' => optional($this->activePromotion())->id,
+            'promotion' => $promotion ? [
+                'id' => $promotion->id,
+                'goal' => $promotion->goal,
+                'cta_label' => $promotion->cta_label,
+                'website_url' => $promotion->website_url,
+            ] : null,
 
             // Destinataire (pour confessions privées)
             'recipient' => $this->when(

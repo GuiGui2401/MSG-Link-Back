@@ -166,6 +166,38 @@ class ChatController extends Controller
     }
 
     /**
+     * Supprimer un message (uniquement l'expéditeur)
+     */
+    public function deleteMessage(Request $request, Conversation $conversation, ChatMessage $message): JsonResponse
+    {
+        $user = $request->user();
+
+        if (!$conversation->hasParticipant($user)) {
+            return response()->json([
+                'message' => 'Accès non autorisé.',
+            ], 403);
+        }
+
+        if ($message->conversation_id !== $conversation->id) {
+            return response()->json([
+                'message' => 'Message non trouvé.',
+            ], 404);
+        }
+
+        if ($message->sender_id !== $user->id) {
+            return response()->json([
+                'message' => 'Accès non autorisé.',
+            ], 403);
+        }
+
+        $message->delete();
+
+        return response()->json([
+            'message' => 'Message supprimé.',
+        ]);
+    }
+
+    /**
      * Envoyer un message dans une conversation
      */
     public function sendMessage(SendChatMessageRequest $request, Conversation $conversation): JsonResponse

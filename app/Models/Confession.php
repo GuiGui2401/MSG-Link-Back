@@ -242,7 +242,7 @@ class Confession extends Model
     public function scopePublicApproved($query)
     {
         return $query->where('type', self::TYPE_PUBLIC)
-            ->where('status', self::STATUS_APPROVED);
+            ->where('confessions.status', self::STATUS_APPROVED);
     }
 
     /**
@@ -258,7 +258,7 @@ class Confession extends Model
      */
     public function scopeApproved($query)
     {
-        return $query->where('status', self::STATUS_APPROVED);
+        return $query->where('confessions.status', self::STATUS_APPROVED);
     }
 
     /**

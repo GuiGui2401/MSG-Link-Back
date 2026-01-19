@@ -73,6 +73,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'last_seen_at' => 'datetime',
         'settings' => 'array',
         'wallet_balance' => 'decimal:2',
+        'promotion_balance' => 'decimal:2',
     ];
 
     /**

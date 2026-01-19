@@ -8,6 +8,7 @@ use App\Http\Requests\Confession\ReportConfessionRequest;
 use App\Http\Resources\ConfessionResource;
 use App\Models\Confession;
 use App\Models\ConfessionComment;
+use App\Models\PostPromotion;
 use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
@@ -25,10 +26,22 @@ class ConfessionController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $activePromotions = PostPromotion::query()
+            ->selectRaw('confession_id, MAX(id) as id')
+            ->where('status', PostPromotion::STATUS_ACTIVE)
+            ->where('ends_at', '>', now())
+            ->groupBy('confession_id');
+
         $confessions = Confession::publicApproved()
+            ->leftJoinSub($activePromotions, 'pp', function ($join) {
+                $join->on('confessions.id', '=', 'pp.confession_id');
+            })
+            ->select('confessions.*')
             ->with('author:id,first_name,last_name,username,avatar,is_premium,is_verified')
             ->withCount(['likedBy', 'comments'])
-            ->orderBy('created_at', 'desc')
+            ->orderByRaw('pp.id IS NULL')
+            ->orderByRaw('COALESCE(liked_by_count, 0) DESC')
+            ->orderBy('confessions.created_at', 'desc')
             ->paginate($request->get('per_page', 20));
 
         // Ajouter le flag "liked" pour l'utilisateur connecté
@@ -114,6 +127,7 @@ class ConfessionController extends Controller
             ->where('is_anonymous', false) // Ne pas inclure les posts anonymes
             ->with('author:id,first_name,last_name,username,avatar,is_premium,is_verified')
             ->withCount(['likedBy', 'comments'])
+            ->orderByRaw('COALESCE(liked_by_count, 0) DESC')
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));
 
@@ -687,6 +701,36 @@ class ConfessionController extends Controller
 
         return response()->json([
             'message' => 'Commentaire supprimé avec succès.',
+        ]);
+    }
+
+    /**
+     * Marquer une impression sponsorisée
+     */
+    public function promotionImpression(Request $request, Confession $confession): JsonResponse
+    {
+        $promotion = $confession->activePromotion();
+        if ($promotion) {
+            $promotion->incrementImpressions();
+        }
+
+        return response()->json([
+            'success' => true,
+        ]);
+    }
+
+    /**
+     * Marquer un clic sponsorisé
+     */
+    public function promotionClick(Request $request, Confession $confession): JsonResponse
+    {
+        $promotion = $confession->activePromotion();
+        if ($promotion) {
+            $promotion->incrementClicks();
+        }
+
+        return response()->json([
+            'success' => true,
         ]);
     }
 }

@@ -55,7 +55,8 @@ Route::prefix('v1')->group(function () {
     Route::get('/users/{userId}/confessions', [ConfessionController::class, 'userConfessions'])->where('userId', '[0-9]+');
     Route::get('/users/{username}/confessions', [ConfessionController::class, 'userConfessionsByUsername'])
         ->where('username', '^[A-Za-z0-9_\\.]+$');
-    Route::get('/users/{username}', [UserController::class, 'show'])->where('username', '^(?!dashboard|profile|settings|blocked|stats).*$');
+    Route::get('/users/{username}', [UserController::class, 'show'])
+        ->where('username', '^(?!dashboard|profile|settings|blocked|stats)[A-Za-z0-9_\\.]+$');
 
     // ==================== PUBLIC CONFESSIONS FEED ====================
     Route::get('/confessions', [ConfessionController::class, 'index']);
@@ -170,6 +171,8 @@ Route::prefix('v1')->group(function () {
             Route::post('/{confession}/like', [ConfessionController::class, 'like']);
             Route::delete('/{confession}/like', [ConfessionController::class, 'unlike']);
             Route::post('/{confession}/view', [ConfessionController::class, 'view']);
+            Route::post('/{confession}/promotion-impression', [ConfessionController::class, 'promotionImpression']);
+            Route::post('/{confession}/promotion-click', [ConfessionController::class, 'promotionClick']);
             Route::post('/{confession}/reveal', [ConfessionController::class, 'reveal']);
             Route::post('/{confession}/report', [ConfessionController::class, 'report']);
             Route::post('/{confession}/comments', [ConfessionController::class, 'addComment']);
@@ -184,6 +187,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/conversations/{conversation}', [ChatController::class, 'show']);
             Route::get('/conversations/{conversation}/messages', [ChatController::class, 'messages']);
             Route::post('/conversations/{conversation}/messages', [ChatController::class, 'sendMessage']);
+            Route::delete('/conversations/{conversation}/messages/{message}', [ChatController::class, 'deleteMessage']);
             Route::post('/conversations/{conversation}/read', [ChatController::class, 'markAsRead']);
             Route::post('/conversations/{conversation}/reveal', [ChatController::class, 'revealIdentity']);
             Route::post('/conversations/{conversation}/gift', [GiftController::class, 'sendInConversation']);
@@ -324,6 +328,8 @@ Route::prefix('v1')->group(function () {
         Route::prefix('promotions')->group(function () {
             Route::get('/pricing', [PostPromotionController::class, 'pricing']);
             Route::get('/my-promotions', [PostPromotionController::class, 'myPromotions']);
+            Route::get('/balance', [PostPromotionController::class, 'balance']);
+            Route::post('/topup', [PostPromotionController::class, 'topup']);
             Route::post('/confessions/{confession}', [PostPromotionController::class, 'promote']);
             Route::delete('/{promotion}', [PostPromotionController::class, 'cancel']);
             Route::get('/{promotion}/stats', [PostPromotionController::class, 'stats']);

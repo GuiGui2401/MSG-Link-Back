@@ -20,6 +20,7 @@ class Group extends Model
         'creator_id',
         'invite_code',
         'is_public',
+        'only_owner_can_post',
         'max_members',
         'members_count',
         'messages_count',
@@ -29,6 +30,7 @@ class Group extends Model
 
     protected $casts = [
         'is_public' => 'boolean',
+        'only_owner_can_post' => 'boolean',
         'max_members' => 'integer',
         'members_count' => 'integer',
         'messages_count' => 'integer',

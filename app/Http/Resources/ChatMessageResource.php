@@ -22,7 +22,8 @@ class ChatMessageResource extends JsonResource
                 'id' => $this->sender->id,
                 'initial' => $this->sender->initial,
                 'first_name' => ($isMine || $hasPremium) ? $this->sender->first_name : null,
-                'avatar_url' => ($isMine || $hasPremium) ? $this->sender->avatar_url : null,
+                // Toujours exposer l'avatar si disponible, meme en mode anonyme.
+                'avatar_url' => $this->sender->avatar_url,
             ];
         } else {
             // Sender supprimé - retourner des données anonymes
