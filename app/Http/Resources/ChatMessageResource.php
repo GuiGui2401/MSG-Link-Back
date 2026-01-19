@@ -41,6 +41,8 @@ class ChatMessageResource extends JsonResource
             'type' => $this->type,
             'media_url' => $this->media_url,
             'media_full_url' => $this->media_full_url,
+            'reply_to_id' => $this->reply_to_message_id,
+            'voice_effect' => $this->voice_effect,
             'is_mine' => $isMine,
 
             // Expéditeur
@@ -71,6 +73,17 @@ class ChatMessageResource extends JsonResource
                     'id' => $this->anonymousMessage->id,
                     'content' => $this->anonymousMessage->content,
                     'created_at' => $this->anonymousMessage->created_at->toIso8601String(),
+                ];
+            }),
+
+            'reply_to' => $this->when($this->relationLoaded('replyToMessage') && $this->replyToMessage, function () {
+                return [
+                    'id' => $this->replyToMessage->id,
+                    'content' => $this->replyToMessage->content,
+                    'type' => $this->replyToMessage->type,
+                    'media_url' => $this->replyToMessage->media_url,
+                    'media_full_url' => $this->replyToMessage->media_full_url,
+                    'created_at' => $this->replyToMessage->created_at->toIso8601String(),
                 ];
             }),
 

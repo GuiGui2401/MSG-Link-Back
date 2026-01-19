@@ -19,9 +19,11 @@ class ChatMessage extends Model
         'type',
         'image_url',
         'voice_url',
+        'voice_effect',
         'video_url',
         'gift_transaction_id',
         'anonymous_message_id',
+        'reply_to_message_id',
         'is_read',
         'read_at',
     ];
@@ -83,6 +85,14 @@ class ChatMessage extends Model
     public function anonymousMessage(): BelongsTo
     {
         return $this->belongsTo(AnonymousMessage::class);
+    }
+
+    /**
+     * Message auquel ce message répond (chat)
+     */
+    public function replyToMessage(): BelongsTo
+    {
+        return $this->belongsTo(ChatMessage::class, 'reply_to_message_id');
     }
 
     // ==================== ACCESSORS ====================

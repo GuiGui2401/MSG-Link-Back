@@ -421,6 +421,7 @@ class GroupController extends Controller
         $validated = $request->validate([
             'content' => 'nullable|string|max:5000',
             'reply_to_message_id' => 'nullable|exists:group_messages,id',
+            'voice_effect' => 'nullable|string|max:50',
             'voice' => 'nullable|file|mimetypes:audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,audio/vnd.wave,audio/m4a,audio/x-m4a,audio/mp4,audio/aac,audio/x-aac,audio/ogg,audio/webm|max:10240',
             'video' => 'nullable|mimetypes:video/mp4,video/quicktime,video/x-msvideo,video/webm,video/x-matroska|max:51200',
             'image' => 'nullable|image|max:10240',
@@ -448,6 +449,7 @@ class GroupController extends Controller
             $path = $voice->store('group_messages/voices', 'public');
             $messageData['media_url'] = $path;
             $messageData['type'] = GroupMessage::TYPE_VOICE;
+            $messageData['voice_effect'] = $validated['voice_effect'] ?? null;
             Log::info('[GroupMessage] voice uploaded', [
                 'group_id' => $group->id,
                 'path' => $path,

@@ -18,6 +18,7 @@ class GroupMessage extends Model
         'content',
         'type',
         'media_url',
+        'voice_effect',
         'reply_to_message_id',
     ];
 

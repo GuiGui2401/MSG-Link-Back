@@ -169,6 +169,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/', [ConfessionController::class, 'store']);
             Route::post('/{confession}/like', [ConfessionController::class, 'like']);
             Route::delete('/{confession}/like', [ConfessionController::class, 'unlike']);
+            Route::post('/{confession}/view', [ConfessionController::class, 'view']);
             Route::post('/{confession}/reveal', [ConfessionController::class, 'reveal']);
             Route::post('/{confession}/report', [ConfessionController::class, 'report']);
             Route::post('/{confession}/comments', [ConfessionController::class, 'addComment']);

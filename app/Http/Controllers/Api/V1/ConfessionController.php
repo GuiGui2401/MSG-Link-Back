@@ -226,6 +226,37 @@ class ConfessionController extends Controller
     }
 
     /**
+     * Marquer une confession comme vue (pour vidéos)
+     */
+    public function view(Request $request, Confession $confession): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifier l'accès
+        if ($confession->is_private) {
+            if ($confession->recipient_id !== $user?->id && $confession->author_id !== $user?->id) {
+                return response()->json([
+                    'message' => 'Accès non autorisé.',
+                ], 403);
+            }
+        } else {
+            if ($confession->status !== Confession::STATUS_APPROVED && $confession->author_id !== $user?->id) {
+                return response()->json([
+                    'message' => 'Confession non disponible.',
+                ], 404);
+            }
+        }
+
+        if ($user && $confession->author_id !== $user->id) {
+            $confession->incrementViews($user);
+        }
+
+        return response()->json([
+            'views_count' => $confession->fresh()->views_count ?? 0,
+        ]);
+    }
+
+    /**
      * Créer une confession
      */
     public function store(CreateConfessionRequest $request): JsonResponse

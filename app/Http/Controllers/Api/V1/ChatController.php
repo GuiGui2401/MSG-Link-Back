@@ -20,6 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Models\AnonymousMessage;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -148,6 +149,7 @@ class ChatController extends Controller
                 'sender:id,first_name,last_name,username,avatar',
                 'giftTransaction.gift',
                 'anonymousMessage:id,content,created_at',
+                'replyToMessage:id,content,type,image_url,voice_url,video_url,created_at',
             ])
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 50));
@@ -192,14 +194,28 @@ class ChatController extends Controller
             'sender_id' => $user->id,
             'content' => $validated['content'] ?? '',
             'type' => ChatMessage::TYPE_TEXT,
-            'anonymous_message_id' => $validated['reply_to_id'] ?? null,
         ];
+
+        if (!empty($validated['reply_to_id'])) {
+            $replyToMessage = $conversation->messages()
+                ->where('id', $validated['reply_to_id'])
+                ->first();
+            if ($replyToMessage) {
+                $messageData['reply_to_message_id'] = $replyToMessage->id;
+            } else {
+                $anonymousMessage = AnonymousMessage::find($validated['reply_to_id']);
+                if ($anonymousMessage) {
+                    $messageData['anonymous_message_id'] = $anonymousMessage->id;
+                }
+            }
+        }
 
         if ($request->hasFile('voice')) {
             $voice = $request->file('voice');
             $path = $voice->store('chat_messages/voices', 'public');
             $messageData['voice_url'] = $path;
             $messageData['type'] = ChatMessage::TYPE_VOICE;
+            $messageData['voice_effect'] = $validated['voice_effect'] ?? null;
             Log::info('[ChatMessage] voice uploaded', [
                 'conversation_id' => $conversation->id,
                 'path' => $path,
@@ -240,7 +256,8 @@ class ChatController extends Controller
         // Charger les relations
         $message->load([
             'sender:id,first_name,last_name,username,avatar',
-            'anonymousMessage:id,content,created_at'
+            'anonymousMessage:id,content,created_at',
+            'replyToMessage:id,content,type,image_url,voice_url,video_url,created_at',
         ]);
 
         // Diffuser l'événement en temps réel
