@@ -42,9 +42,10 @@ class DemoDataSeeder extends Seeder
             ->state(function () use ($users) {
                 $author = $users->random();
                 $type = fake()->randomElement([Confession::TYPE_PUBLIC, Confession::TYPE_PRIVATE]);
-                $recipientId = $type === Confession::TYPE_PRIVATE
-                    ? $this->pickDifferentUserId($users, $author->id)
-                    : null;
+                $recipientId = null;
+                if ($type === Confession::TYPE_PRIVATE) {
+                    $recipientId = $users->where('id', '!=', $author->id)->random()->id;
+                }
 
                 return [
                     'author_id' => $author->id,

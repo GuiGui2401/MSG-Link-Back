@@ -44,7 +44,7 @@ class PostPromotionFactory extends Factory
             'estimated_views' => $this->faker->randomFloat(2, 1000, 20000),
             'estimated_reach' => $this->faker->randomFloat(2, 800, 15000),
             'estimated_cpv' => $this->faker->randomFloat(2, 5, 50),
-            'campaign_id' => 'camp_' . Str::uuid(),
+            'campaign_id' => (string) Str::uuid(),
             'starts_at' => $startsAt,
             'ends_at' => $endsAt,
             'status' => $this->faker->randomElement([
