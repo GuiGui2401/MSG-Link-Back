@@ -10,9 +10,12 @@ use App\Models\Confession;
 use App\Models\ConfessionComment;
 use App\Models\PostPromotion;
 use App\Models\User;
+use App\Models\WalletTransaction;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class ConfessionController extends Controller
@@ -20,6 +23,13 @@ class ConfessionController extends Controller
     public function __construct(
         private NotificationService $notificationService
     ) {}
+
+    private function jsonResponse(array $payload, int $status = 200): JsonResponse
+    {
+        $options = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE;
+
+        return response()->json($payload, $status, [], $options);
+    }
 
     /**
      * Feed des confessions publiques approuvées
@@ -58,7 +68,7 @@ class ConfessionController extends Controller
             });
         }
 
-        return response()->json([
+        return $this->jsonResponse([
             'confessions' => ConfessionResource::collection($confessions),
             'meta' => [
                 'current_page' => $confessions->currentPage(),
@@ -82,7 +92,7 @@ class ConfessionController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));
 
-        return response()->json([
+        return $this->jsonResponse([
             'confessions' => ConfessionResource::collection($confessions),
             'meta' => [
                 'current_page' => $confessions->currentPage(),
@@ -105,7 +115,7 @@ class ConfessionController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));
 
-        return response()->json([
+        return $this->jsonResponse([
             'confessions' => ConfessionResource::collection($confessions),
             'meta' => [
                 'current_page' => $confessions->currentPage(),
@@ -139,7 +149,7 @@ class ConfessionController extends Controller
             });
         }
 
-        return response()->json([
+        return $this->jsonResponse([
             'confessions' => ConfessionResource::collection($confessions),
             'meta' => [
                 'current_page' => $confessions->currentPage(),
@@ -158,7 +168,7 @@ class ConfessionController extends Controller
         $user = User::where('username', $username)->first();
 
         if (!$user) {
-            return response()->json([
+            return $this->jsonResponse([
                 'message' => 'Utilisateur non trouvé.',
             ], 404);
         }
@@ -189,7 +199,7 @@ class ConfessionController extends Controller
             return $confession;
         });
 
-        return response()->json([
+        return $this->jsonResponse([
             'confessions' => ConfessionResource::collection($confessions),
             'meta' => [
                 'current_page' => $confessions->currentPage(),
@@ -210,14 +220,14 @@ class ConfessionController extends Controller
         // Vérifier l'accès
         if ($confession->is_private) {
             if ($confession->recipient_id !== $user?->id && $confession->author_id !== $user?->id) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Accès non autorisé.',
                 ], 403);
             }
         } else {
             // Confession publique : doit être approuvée
             if ($confession->status !== Confession::STATUS_APPROVED && $confession->author_id !== $user?->id) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Confession non disponible.',
                 ], 404);
             }
@@ -229,12 +239,12 @@ class ConfessionController extends Controller
         }
 
         $confession->load('author:id,first_name,last_name,username,avatar');
-        
+
         if ($user) {
             $confession->is_liked = $confession->isLikedBy($user);
         }
 
-        return response()->json([
+        return $this->jsonResponse([
             'confession' => new ConfessionResource($confession),
         ]);
     }
@@ -249,13 +259,13 @@ class ConfessionController extends Controller
         // Vérifier l'accès
         if ($confession->is_private) {
             if ($confession->recipient_id !== $user?->id && $confession->author_id !== $user?->id) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Accès non autorisé.',
                 ], 403);
             }
         } else {
             if ($confession->status !== Confession::STATUS_APPROVED && $confession->author_id !== $user?->id) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Confession non disponible.',
                 ], 404);
             }
@@ -265,7 +275,7 @@ class ConfessionController extends Controller
             $confession->incrementViews($user);
         }
 
-        return response()->json([
+        return $this->jsonResponse([
             'views_count' => $confession->fresh()->views_count ?? 0,
         ]);
     }
@@ -302,7 +312,7 @@ class ConfessionController extends Controller
         // Si confession privée, vérifier le destinataire
         if ($validated['type'] === Confession::TYPE_PRIVATE) {
             if (empty($validated['recipient_username'])) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Un destinataire est requis pour une confession privée.',
                 ], 422);
             }
@@ -310,19 +320,19 @@ class ConfessionController extends Controller
             $recipient = User::where('username', $validated['recipient_username'])->first();
 
             if (!$recipient) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Destinataire non trouvé.',
                 ], 404);
             }
 
             if ($recipient->id === $user->id) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Vous ne pouvez pas vous envoyer une confession.',
                 ], 422);
             }
 
             if ($user->isBlockedBy($recipient) || $user->hasBlocked($recipient)) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Impossible d\'envoyer une confession à cet utilisateur.',
                 ], 422);
             }
@@ -341,7 +351,7 @@ class ConfessionController extends Controller
             $this->notificationService->sendNewConfessionNotification($confession);
         }
 
-        return response()->json([
+        return $this->jsonResponse([
             'message' => $confession->is_public
                 ? 'Confession publique publiée avec succès.'
                 : 'Confession envoyée avec succès.',
@@ -358,7 +368,7 @@ class ConfessionController extends Controller
 
         // Seul l'auteur ou le destinataire peut supprimer
         if ($confession->author_id !== $user->id && $confession->recipient_id !== $user->id) {
-            return response()->json([
+            return $this->jsonResponse([
                 'message' => 'Accès non autorisé.',
             ], 403);
         }
@@ -369,7 +379,7 @@ class ConfessionController extends Controller
             ->exists();
 
         if ($hasActivePromotion) {
-            return response()->json([
+            return $this->jsonResponse([
                 'message' => 'Impossible de supprimer cette publication car elle est actuellement en cours de promotion. Attendez la fin de la promotion ou annulez-la d\'abord.',
                 'has_active_promotion' => true,
             ], 422);
@@ -377,7 +387,7 @@ class ConfessionController extends Controller
 
         $confession->delete();
 
-        return response()->json([
+        return $this->jsonResponse([
             'message' => 'Confession supprimée avec succès.',
         ]);
     }
@@ -390,14 +400,14 @@ class ConfessionController extends Controller
         $user = $request->user();
 
         if (!$confession->is_public || !$confession->is_approved) {
-            return response()->json([
+            return $this->jsonResponse([
                 'message' => 'Action non autorisée.',
             ], 403);
         }
 
         $liked = $confession->like($user);
 
-        return response()->json([
+        return $this->jsonResponse([
             'message' => $liked ? 'Confession likée.' : 'Vous avez déjà liké cette confession.',
             'likes_count' => $confession->fresh()->likes_count,
         ]);
@@ -412,7 +422,7 @@ class ConfessionController extends Controller
 
         $unliked = $confession->unlike($user);
 
-        return response()->json([
+        return $this->jsonResponse([
             'message' => $unliked ? 'Like retiré.' : 'Vous n\'avez pas liké cette confession.',
             'likes_count' => $confession->fresh()->likes_count,
         ]);
@@ -427,14 +437,14 @@ class ConfessionController extends Controller
         $validated = $request->validated();
 
         if ($confession->isReportedBy($user)) {
-            return response()->json([
+            return $this->jsonResponse([
                 'message' => 'Vous avez déjà signalé cette confession.',
             ], 422);
         }
 
         $confession->report($user, $validated['reason'], $validated['description'] ?? null);
 
-        return response()->json([
+        return $this->jsonResponse([
             'message' => 'Signalement envoyé. Merci pour votre vigilance.',
         ], 201);
     }
@@ -445,30 +455,69 @@ class ConfessionController extends Controller
     public function reveal(Request $request, Confession $confession): JsonResponse
     {
         $user = $request->user();
+        // Le post est sense etre vu par tout le monde ici, donc pas besoin de verifier l'acces
 
-        if ($confession->recipient_id !== $user->id) {
-            return response()->json([
-                'message' => 'Accès non autorisé.',
-            ], 403);
-        }
+        // if ($confession->recipient_id !== $user->id) {
+        //     return $this->jsonResponse([
+        //         'message' => 'Accès non autorisé.',
+        //     ], 403);
+        // }
 
         if ($confession->is_identity_revealed) {
-            return response()->json([
+            return $this->jsonResponse([
                 'message' => 'L\'identité a déjà été révélée.',
                 'author' => $confession->author_info,
             ]);
         }
 
-        // Vérifier abonnement premium
-        // Note: Pour les confessions, on utilise un système similaire aux messages
-        // L'utilisateur doit avoir un abonnement actif
+        // Vérifier l'abonnement (paiement à l'acte comme les messages)
+        $revealPrice = reveal_anonymous_price();
 
-        // TODO: Implémenter la logique premium pour les confessions
+        if ($user->wallet_balance < $revealPrice) {
+            return $this->jsonResponse([
+                'message' => 'Solde insuffisant pour révéler l\'identité.',
+                'requires_payment' => true,
+                'price' => $revealPrice,
+                'current_balance' => $user->wallet_balance,
+            ], 402);
+        }
 
-        return response()->json([
-            'message' => 'Un abonnement premium est requis.',
-            'requires_premium' => true,
-        ], 402);
+        try {
+            DB::beginTransaction();
+
+            $balanceBefore = $user->wallet_balance;
+            $user->wallet_balance -= $revealPrice;
+            $user->save();
+
+            WalletTransaction::create([
+                'user_id' => $user->id,
+                'type' => WalletTransaction::TYPE_DEBIT,
+                'amount' => $revealPrice,
+                'balance_before' => $balanceBefore,
+                'balance_after' => $user->wallet_balance,
+                'description' => 'Révélation d\'identité d\'une confession privée',
+                'reference' => 'REVEAL_CONF_' . $confession->id . '_' . time(),
+                'transactionable_type' => Confession::class,
+                'transactionable_id' => $confession->id,
+            ]);
+
+            $confession->revealIdentity();
+
+            DB::commit();
+
+            return $this->jsonResponse([
+                'message' => 'Identité révélée avec succès.',
+                'author' => $confession->fresh()->author_info,
+                'new_balance' => $user->wallet_balance,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Erreur lors de la révélation d\'identité d\'une confession: ' . $e->getMessage());
+
+            return $this->jsonResponse([
+                'message' => 'Une erreur est survenue lors de la révélation de l\'identité.',
+            ], 500);
+        }
     }
 
     /**
@@ -478,7 +527,7 @@ class ConfessionController extends Controller
     {
         $user = $request->user();
 
-        return response()->json([
+        return $this->jsonResponse([
             'received_count' => Confession::forRecipient($user->id)->count(),
             'sent_count' => Confession::where('author_id', $user->id)->count(),
             'public_approved_count' => Confession::where('author_id', $user->id)
@@ -499,14 +548,14 @@ class ConfessionController extends Controller
         if ($confession->is_private) {
             $user = $request->user();
             if ($confession->recipient_id !== $user?->id && $confession->author_id !== $user?->id) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Accès non autorisé.',
                 ], 403);
             }
         } else {
             // Confession publique : doit être approuvée
             if ($confession->status !== Confession::STATUS_APPROVED) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Confession non disponible.',
                 ], 404);
             }
@@ -567,7 +616,7 @@ class ConfessionController extends Controller
                 ];
             });
 
-        return response()->json([
+        return $this->jsonResponse([
             'comments' => $comments,
             'total' => $comments->count(),
         ]);
@@ -583,14 +632,14 @@ class ConfessionController extends Controller
         // Vérifier l'accès à la confession
         if ($confession->is_private) {
             if ($confession->recipient_id !== $user->id && $confession->author_id !== $user->id) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Accès non autorisé.',
                 ], 403);
             }
         } else {
             // Confession publique : doit être approuvée
             if ($confession->status !== Confession::STATUS_APPROVED) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Confession non disponible.',
                 ], 404);
             }
@@ -610,7 +659,7 @@ class ConfessionController extends Controller
                 ->where('id', $parentId)
                 ->first();
             if (!$parentComment) {
-                return response()->json([
+                return $this->jsonResponse([
                     'message' => 'Commentaire parent introuvable.',
                 ], 404);
             }
@@ -633,7 +682,7 @@ class ConfessionController extends Controller
 
         $comment->load('author:id,first_name,username,avatar');
 
-        return response()->json([
+        return $this->jsonResponse([
             'message' => 'Commentaire ajouté avec succès.',
             'comment' => [
                 'id' => $comment->id,
@@ -685,21 +734,21 @@ class ConfessionController extends Controller
 
         // Vérifier que le commentaire appartient bien à cette confession
         if ($comment->confession_id !== $confession->id) {
-            return response()->json([
+            return $this->jsonResponse([
                 'message' => 'Commentaire non trouvé.',
             ], 404);
         }
 
         // Seul l'auteur du commentaire peut le supprimer
         if ($comment->author_id !== $user->id) {
-            return response()->json([
+            return $this->jsonResponse([
                 'message' => 'Accès non autorisé.',
             ], 403);
         }
 
         $comment->delete();
 
-        return response()->json([
+        return $this->jsonResponse([
             'message' => 'Commentaire supprimé avec succès.',
         ]);
     }
@@ -714,7 +763,7 @@ class ConfessionController extends Controller
             $promotion->incrementImpressions();
         }
 
-        return response()->json([
+        return $this->jsonResponse([
             'success' => true,
         ]);
     }
@@ -729,7 +778,7 @@ class ConfessionController extends Controller
             $promotion->incrementClicks();
         }
 
-        return response()->json([
+        return $this->jsonResponse([
             'success' => true,
         ]);
     }
