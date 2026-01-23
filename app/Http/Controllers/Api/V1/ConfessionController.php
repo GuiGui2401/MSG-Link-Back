@@ -21,52 +21,145 @@ class ConfessionController extends Controller
         private NotificationService $notificationService
     ) {}
 
+    private function jsonResponse(array $data, int $status = 200): JsonResponse
+    {
+        $options = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE;
+        return response()->json($data, $status, [], $options);
+    }
+
     /**
      * Feed des confessions publiques approuvées
      */
     public function index(Request $request): JsonResponse
     {
+        $perPage = (int) $request->get('per_page', 20);
+        $page = max(1, (int) $request->get('page', 1));
+        $sponsorBoost = 2.0;
+        $sponsorSpacing = 5;
+
         $activePromotions = PostPromotion::query()
             ->selectRaw('confession_id, MAX(id) as id')
             ->where('status', PostPromotion::STATUS_ACTIVE)
             ->where('ends_at', '>', now())
             ->groupBy('confession_id');
 
-        $confessions = Confession::publicApproved()
+        $commentsCountSql = '(select count(*) from confession_comments where confessions.id = confession_comments.confession_id and confession_comments.deleted_at is null)';
+        $reportsCountSql = '(select count(*) from reports where confessions.id = reports.reportable_id and reports.reportable_type = \'' . addslashes(Confession::class) . '\' and reports.status != \'' . \App\Models\Report::STATUS_DISMISSED . '\')';
+        $feedScoreSql = '(
+                (
+                    (COALESCE(confessions.likes_count, 0) * 1) +
+                    (COALESCE(' . $commentsCountSql . ', 0) * 3) +
+                    (COALESCE(confessions.shares_count, 0) * 5)
+                ) - (COALESCE(' . $reportsCountSql . ', 0) * 10)
+            )
+            * (CASE WHEN COALESCE(' . $reportsCountSql . ', 0) >= 10 THEN 0.5 ELSE 1 END)
+            * (CASE
+                WHEN TIMESTAMPDIFF(HOUR, confessions.created_at, NOW()) < 2 THEN 1.5
+                WHEN TIMESTAMPDIFF(HOUR, confessions.created_at, NOW()) < 6 THEN 1.3
+                WHEN TIMESTAMPDIFF(HOUR, confessions.created_at, NOW()) < 24 THEN 1.1
+                ELSE 1.0
+            END)';
+
+        $baseQuery = Confession::publicApproved()
             ->leftJoinSub($activePromotions, 'pp', function ($join) {
                 $join->on('confessions.id', '=', 'pp.confession_id');
             })
             ->select('confessions.*')
+            ->addSelect('pp.id as promotion_id')
             ->with('author:id,first_name,last_name,username,avatar,is_premium,is_verified')
-            ->withCount(['likedBy', 'comments'])
-            ->orderByRaw('pp.id IS NULL')
-            ->orderByRaw('COALESCE(liked_by_count, 0) DESC')
-            ->orderBy('confessions.created_at', 'desc')
-            ->paginate($request->get('per_page', 20));
+            ->withCount(['comments'])
+            ->selectRaw($feedScoreSql . ' as feed_score')
+            ->selectRaw(
+                '(' . $feedScoreSql . ' * (CASE WHEN pp.id IS NULL THEN 1 ELSE ' . $sponsorBoost . ' END)) as boosted_score'
+            );
+
+        $total = (clone $baseQuery)->count('confessions.id');
+        $targetCount = $page * $perPage;
+        $chunkSize = max(50, $perPage * 3);
+
+        $final = [];
+        $pendingSponsored = [];
+        $lastSponsoredIndex = null;
+        $offset = 0;
+        $hasMore = true;
+
+        while (count($final) < $targetCount && $hasMore) {
+            $chunk = (clone $baseQuery)
+                ->orderByRaw('boosted_score DESC')
+                ->orderBy('confessions.created_at', 'desc')
+                ->offset($offset)
+                ->limit($chunkSize)
+                ->get();
+
+            $countChunk = $chunk->count();
+            $offset += $countChunk;
+            $hasMore = $countChunk === $chunkSize;
+
+            foreach ($chunk as $confession) {
+                $isSponsored = !is_null($confession->promotion_id);
+
+                if ($isSponsored) {
+                    if ($this->canInsertSponsored(count($final), $lastSponsoredIndex, $sponsorSpacing)) {
+                        $final[] = $confession;
+                        $lastSponsoredIndex = count($final) - 1;
+                    } else {
+                        $pendingSponsored[] = $confession;
+                    }
+                } else {
+                    $final[] = $confession;
+                }
+
+                while (!empty($pendingSponsored)
+                    && $this->canInsertSponsored(count($final), $lastSponsoredIndex, $sponsorSpacing)
+                    && count($final) < $targetCount) {
+                    $final[] = array_shift($pendingSponsored);
+                    $lastSponsoredIndex = count($final) - 1;
+                }
+
+                if (count($final) >= $targetCount) {
+                    break;
+                }
+            }
+        }
+
+        $start = ($page - 1) * $perPage;
+        $pageItems = array_slice($final, $start, $perPage);
+        $confessions = collect($pageItems);
 
         // Ajouter le flag "liked" pour l'utilisateur connecté
         if ($request->user()) {
-            $confessions->getCollection()->transform(function ($confession) use ($request) {
+            $confessions->transform(function ($confession) use ($request) {
                 $confession->is_liked = $confession->isLikedBy($request->user());
                 return $confession;
             });
         } else {
             // Si pas connecté, is_liked = false
-            $confessions->getCollection()->transform(function ($confession) {
+            $confessions->transform(function ($confession) {
                 $confession->is_liked = false;
                 return $confession;
             });
         }
 
-        return response()->json([
+        return $this->jsonResponse([
             'confessions' => ConfessionResource::collection($confessions),
             'meta' => [
-                'current_page' => $confessions->currentPage(),
-                'last_page' => $confessions->lastPage(),
-                'per_page' => $confessions->perPage(),
-                'total' => $confessions->total(),
+                'current_page' => $page,
+                'last_page' => (int) ceil($total / $perPage),
+                'per_page' => $perPage,
+                'total' => $total,
             ],
         ]);
+    }
+
+    private function canInsertSponsored(
+        int $currentIndex,
+        ?int $lastSponsoredIndex,
+        int $spacing
+    ): bool {
+        if ($lastSponsoredIndex === null) {
+            return true;
+        }
+        return ($currentIndex - $lastSponsoredIndex) >= $spacing;
     }
 
     /**
@@ -82,7 +175,7 @@ class ConfessionController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));
 
-        return response()->json([
+        return $this->jsonResponse([
             'confessions' => ConfessionResource::collection($confessions),
             'meta' => [
                 'current_page' => $confessions->currentPage(),
@@ -105,7 +198,7 @@ class ConfessionController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 20));
 
-        return response()->json([
+        return $this->jsonResponse([
             'confessions' => ConfessionResource::collection($confessions),
             'meta' => [
                 'current_page' => $confessions->currentPage(),
@@ -139,7 +232,7 @@ class ConfessionController extends Controller
             });
         }
 
-        return response()->json([
+        return $this->jsonResponse([
             'confessions' => ConfessionResource::collection($confessions),
             'meta' => [
                 'current_page' => $confessions->currentPage(),
@@ -158,7 +251,7 @@ class ConfessionController extends Controller
         $user = User::where('username', $username)->first();
 
         if (!$user) {
-            return response()->json([
+            return $this->jsonResponse([
                 'message' => 'Utilisateur non trouvé.',
             ], 404);
         }
@@ -189,7 +282,7 @@ class ConfessionController extends Controller
             return $confession;
         });
 
-        return response()->json([
+        return $this->jsonResponse([
             'confessions' => ConfessionResource::collection($confessions),
             'meta' => [
                 'current_page' => $confessions->currentPage(),
@@ -210,14 +303,14 @@ class ConfessionController extends Controller
         // Vérifier l'accès
         if ($confession->is_private) {
             if ($confession->recipient_id !== $user?->id && $confession->author_id !== $user?->id) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Accès non autorisé.',
                 ], 403);
             }
         } else {
             // Confession publique : doit être approuvée
             if ($confession->status !== Confession::STATUS_APPROVED && $confession->author_id !== $user?->id) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Confession non disponible.',
                 ], 404);
             }
@@ -234,7 +327,7 @@ class ConfessionController extends Controller
             $confession->is_liked = $confession->isLikedBy($user);
         }
 
-        return response()->json([
+        return $this->JsonResponse([
             'confession' => new ConfessionResource($confession),
         ]);
     }
@@ -249,13 +342,13 @@ class ConfessionController extends Controller
         // Vérifier l'accès
         if ($confession->is_private) {
             if ($confession->recipient_id !== $user?->id && $confession->author_id !== $user?->id) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Accès non autorisé.',
                 ], 403);
             }
         } else {
             if ($confession->status !== Confession::STATUS_APPROVED && $confession->author_id !== $user?->id) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Confession non disponible.',
                 ], 404);
             }
@@ -265,8 +358,37 @@ class ConfessionController extends Controller
             $confession->incrementViews($user);
         }
 
-        return response()->json([
+        return $this->JsonResponse([
             'views_count' => $confession->fresh()->views_count ?? 0,
+        ]);
+    }
+
+    /**
+     * Marquer une confession comme partagée
+     */
+    public function share(Request $request, Confession $confession): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifier l'accès
+        if ($confession->is_private) {
+            if ($confession->recipient_id !== $user?->id && $confession->author_id !== $user?->id) {
+                return $this->JsonResponse([
+                    'message' => 'Accès non autorisé.',
+                ], 403);
+            }
+        } else {
+            if ($confession->status !== Confession::STATUS_APPROVED && $confession->author_id !== $user?->id) {
+                return $this->JsonResponse([
+                    'message' => 'Confession non disponible.',
+                ], 404);
+            }
+        }
+
+        $confession->incrementShares($user);
+
+        return $this->JsonResponse([
+            'shares_count' => $confession->fresh()->shares_count ?? 0,
         ]);
     }
 
@@ -302,7 +424,7 @@ class ConfessionController extends Controller
         // Si confession privée, vérifier le destinataire
         if ($validated['type'] === Confession::TYPE_PRIVATE) {
             if (empty($validated['recipient_username'])) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Un destinataire est requis pour une confession privée.',
                 ], 422);
             }
@@ -310,19 +432,19 @@ class ConfessionController extends Controller
             $recipient = User::where('username', $validated['recipient_username'])->first();
 
             if (!$recipient) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Destinataire non trouvé.',
                 ], 404);
             }
 
             if ($recipient->id === $user->id) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Vous ne pouvez pas vous envoyer une confession.',
                 ], 422);
             }
 
             if ($user->isBlockedBy($recipient) || $user->hasBlocked($recipient)) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Impossible d\'envoyer une confession à cet utilisateur.',
                 ], 422);
             }
@@ -341,7 +463,7 @@ class ConfessionController extends Controller
             $this->notificationService->sendNewConfessionNotification($confession);
         }
 
-        return response()->json([
+        return $this->JsonResponse([
             'message' => $confession->is_public
                 ? 'Confession publique publiée avec succès.'
                 : 'Confession envoyée avec succès.',
@@ -358,7 +480,7 @@ class ConfessionController extends Controller
 
         // Seul l'auteur ou le destinataire peut supprimer
         if ($confession->author_id !== $user->id && $confession->recipient_id !== $user->id) {
-            return response()->json([
+            return $this->JsonResponse([
                 'message' => 'Accès non autorisé.',
             ], 403);
         }
@@ -369,7 +491,7 @@ class ConfessionController extends Controller
             ->exists();
 
         if ($hasActivePromotion) {
-            return response()->json([
+            return $this->JsonResponse([
                 'message' => 'Impossible de supprimer cette publication car elle est actuellement en cours de promotion. Attendez la fin de la promotion ou annulez-la d\'abord.',
                 'has_active_promotion' => true,
             ], 422);
@@ -377,7 +499,7 @@ class ConfessionController extends Controller
 
         $confession->delete();
 
-        return response()->json([
+        return $this->JsonResponse([
             'message' => 'Confession supprimée avec succès.',
         ]);
     }
@@ -390,14 +512,14 @@ class ConfessionController extends Controller
         $user = $request->user();
 
         if (!$confession->is_public || !$confession->is_approved) {
-            return response()->json([
+            return $this->JsonResponse([
                 'message' => 'Action non autorisée.',
             ], 403);
         }
 
         $liked = $confession->like($user);
 
-        return response()->json([
+        return $this->JsonResponse([
             'message' => $liked ? 'Confession likée.' : 'Vous avez déjà liké cette confession.',
             'likes_count' => $confession->fresh()->likes_count,
         ]);
@@ -412,7 +534,7 @@ class ConfessionController extends Controller
 
         $unliked = $confession->unlike($user);
 
-        return response()->json([
+        return $this->JsonResponse([
             'message' => $unliked ? 'Like retiré.' : 'Vous n\'avez pas liké cette confession.',
             'likes_count' => $confession->fresh()->likes_count,
         ]);
@@ -427,14 +549,14 @@ class ConfessionController extends Controller
         $validated = $request->validated();
 
         if ($confession->isReportedBy($user)) {
-            return response()->json([
+            return $this->JsonResponse([
                 'message' => 'Vous avez déjà signalé cette confession.',
             ], 422);
         }
 
         $confession->report($user, $validated['reason'], $validated['description'] ?? null);
 
-        return response()->json([
+        return $this->JsonResponse([
             'message' => 'Signalement envoyé. Merci pour votre vigilance.',
         ], 201);
     }
@@ -447,13 +569,13 @@ class ConfessionController extends Controller
         $user = $request->user();
 
         if ($confession->recipient_id !== $user->id) {
-            return response()->json([
+            return $this->JsonResponse([
                 'message' => 'Accès non autorisé.',
             ], 403);
         }
 
         if ($confession->is_identity_revealed) {
-            return response()->json([
+            return $this->JsonResponse([
                 'message' => 'L\'identité a déjà été révélée.',
                 'author' => $confession->author_info,
             ]);
@@ -465,7 +587,7 @@ class ConfessionController extends Controller
 
         // TODO: Implémenter la logique premium pour les confessions
 
-        return response()->json([
+        return $this->JsonResponse([
             'message' => 'Un abonnement premium est requis.',
             'requires_premium' => true,
         ], 402);
@@ -478,7 +600,7 @@ class ConfessionController extends Controller
     {
         $user = $request->user();
 
-        return response()->json([
+        return $this->JsonResponse([
             'received_count' => Confession::forRecipient($user->id)->count(),
             'sent_count' => Confession::where('author_id', $user->id)->count(),
             'public_approved_count' => Confession::where('author_id', $user->id)
@@ -499,14 +621,14 @@ class ConfessionController extends Controller
         if ($confession->is_private) {
             $user = $request->user();
             if ($confession->recipient_id !== $user?->id && $confession->author_id !== $user?->id) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Accès non autorisé.',
                 ], 403);
             }
         } else {
             // Confession publique : doit être approuvée
             if ($confession->status !== Confession::STATUS_APPROVED) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Confession non disponible.',
                 ], 404);
             }
@@ -514,13 +636,22 @@ class ConfessionController extends Controller
 
         $currentUserId = $request->user()?->id;
 
-        $comments = $confession->comments()
+        $commentsQuery = $confession->comments()
             ->with([
                 'author:id,first_name,username,avatar',
                 'parent.author:id,first_name,username,avatar',
             ])
-            ->orderBy('created_at', 'asc')
-            ->get()
+            ->orderBy('created_at', 'asc');
+
+        if ($currentUserId) {
+            $commentsQuery->withExists([
+                'likedBy as is_liked' => function ($query) use ($currentUserId) {
+                    $query->where('user_id', $currentUserId);
+                },
+            ]);
+        }
+
+        $comments = $commentsQuery->get()
             ->map(function ($comment) use ($currentUserId) {
                 $parent = $comment->parent;
                 $parentPayload = null;
@@ -562,12 +693,14 @@ class ConfessionController extends Controller
                     'media_url' => $comment->media_url,
                     'media_full_url' => $comment->media_full_url,
                     'media_type' => $comment->media_type,
+                    'likes_count' => $comment->likes_count ?? 0,
+                    'is_liked' => $currentUserId ? (bool) $comment->is_liked : false,
                     'created_at' => $comment->created_at,
                     'is_mine' => $comment->author_id === $currentUserId,
                 ];
             });
 
-        return response()->json([
+        return $this->JsonResponse([
             'comments' => $comments,
             'total' => $comments->count(),
         ]);
@@ -583,14 +716,14 @@ class ConfessionController extends Controller
         // Vérifier l'accès à la confession
         if ($confession->is_private) {
             if ($confession->recipient_id !== $user->id && $confession->author_id !== $user->id) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Accès non autorisé.',
                 ], 403);
             }
         } else {
             // Confession publique : doit être approuvée
             if ($confession->status !== Confession::STATUS_APPROVED) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Confession non disponible.',
                 ], 404);
             }
@@ -610,7 +743,7 @@ class ConfessionController extends Controller
                 ->where('id', $parentId)
                 ->first();
             if (!$parentComment) {
-                return response()->json([
+                return $this->JsonResponse([
                     'message' => 'Commentaire parent introuvable.',
                 ], 404);
             }
@@ -633,7 +766,7 @@ class ConfessionController extends Controller
 
         $comment->load('author:id,first_name,username,avatar');
 
-        return response()->json([
+        return $this->JsonResponse([
             'message' => 'Commentaire ajouté avec succès.',
             'comment' => [
                 'id' => $comment->id,
@@ -659,6 +792,8 @@ class ConfessionController extends Controller
                 'media_url' => $comment->media_url,
                 'media_full_url' => $comment->media_full_url,
                 'media_type' => $comment->media_type,
+                'likes_count' => $comment->likes_count ?? 0,
+                'is_liked' => false,
                 'author' => $comment->is_anonymous ? [
                     'name' => 'Anonyme',
                     'initial' => '?',
@@ -677,6 +812,58 @@ class ConfessionController extends Controller
     }
 
     /**
+     * Liker un commentaire
+     */
+    public function likeComment(Request $request, Confession $confession, ConfessionComment $comment): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($comment->confession_id !== $confession->id) {
+            return $this->JsonResponse([
+                'message' => 'Commentaire non trouvé.',
+            ], 404);
+        }
+
+        $alreadyLiked = $comment->likedBy()->where('user_id', $user->id)->exists();
+        if (!$alreadyLiked) {
+            $comment->likedBy()->attach($user->id);
+            $comment->likes_count = ($comment->likes_count ?? 0) + 1;
+            $comment->save();
+        }
+
+        return $this->JsonResponse([
+            'likes_count' => $comment->likes_count ?? 0,
+            'is_liked' => true,
+        ]);
+    }
+
+    /**
+     * Retirer un like d'un commentaire
+     */
+    public function unlikeComment(Request $request, Confession $confession, ConfessionComment $comment): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($comment->confession_id !== $confession->id) {
+            return $this->JsonResponse([
+                'message' => 'Commentaire non trouvé.',
+            ], 404);
+        }
+
+        $alreadyLiked = $comment->likedBy()->where('user_id', $user->id)->exists();
+        if ($alreadyLiked) {
+            $comment->likedBy()->detach($user->id);
+            $comment->likes_count = max(0, ($comment->likes_count ?? 0) - 1);
+            $comment->save();
+        }
+
+        return $this->JsonResponse([
+            'likes_count' => $comment->likes_count ?? 0,
+            'is_liked' => false,
+        ]);
+    }
+
+    /**
      * Supprimer un commentaire
      */
     public function deleteComment(Request $request, Confession $confession, ConfessionComment $comment): JsonResponse
@@ -685,21 +872,21 @@ class ConfessionController extends Controller
 
         // Vérifier que le commentaire appartient bien à cette confession
         if ($comment->confession_id !== $confession->id) {
-            return response()->json([
+            return $this->JsonResponse([
                 'message' => 'Commentaire non trouvé.',
             ], 404);
         }
 
         // Seul l'auteur du commentaire peut le supprimer
         if ($comment->author_id !== $user->id) {
-            return response()->json([
+            return $this->JsonResponse([
                 'message' => 'Accès non autorisé.',
             ], 403);
         }
 
         $comment->delete();
 
-        return response()->json([
+        return $this->JsonResponse([
             'message' => 'Commentaire supprimé avec succès.',
         ]);
     }
@@ -714,7 +901,7 @@ class ConfessionController extends Controller
             $promotion->incrementImpressions();
         }
 
-        return response()->json([
+        return $this->JsonResponse([
             'success' => true,
         ]);
     }
@@ -729,7 +916,7 @@ class ConfessionController extends Controller
             $promotion->incrementClicks();
         }
 
-        return response()->json([
+        return $this->JsonResponse([
             'success' => true,
         ]);
     }

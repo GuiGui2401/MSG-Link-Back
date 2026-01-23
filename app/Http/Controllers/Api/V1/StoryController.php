@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
 
 class StoryController extends Controller
@@ -55,6 +56,9 @@ class StoryController extends Controller
 
             if ($firstStory->type === 'image') {
                 $preview['media_url'] = $firstStory->media_full_url;
+            } elseif ($firstStory->type === 'video') {
+                $preview['media_url'] = $firstStory->media_full_url;
+                $preview['thumbnail_url'] = $firstStory->thumbnail_full_url;
             } elseif ($firstStory->type === 'text') {
                 $preview['content'] = $firstStory->content;
                 $preview['background_color'] = $firstStory->background_color;
@@ -263,6 +267,13 @@ class StoryController extends Controller
             // Sauvegarder le média
             $path = $media->store('stories/' . $user->id, 'public');
             $storyData['media_url'] = $path;
+
+            if ($validated['type'] === 'video') {
+                $thumbnailPath = $this->generateVideoThumbnail($path, $user->id);
+                if ($thumbnailPath) {
+                    $storyData['thumbnail_url'] = $thumbnailPath;
+                }
+            }
         }
 
         // Gestion du contenu texte
@@ -513,5 +524,36 @@ class StoryController extends Controller
         }
 
         return $formatted;
+    }
+
+    private function generateVideoThumbnail(string $mediaPath, int $userId): ?string
+    {
+        $disk = Storage::disk('public');
+        $inputPath = $disk->path($mediaPath);
+        if (!is_file($inputPath)) {
+            return null;
+        }
+
+        $ffmpegPath = trim((string) shell_exec('command -v ffmpeg'));
+        if ($ffmpegPath === '') {
+            return null;
+        }
+
+        $thumbDir = "stories/{$userId}/thumbs";
+        $disk->makeDirectory($thumbDir);
+        $thumbFilename = 'thumb_' . pathinfo($mediaPath, PATHINFO_FILENAME) . '_' .
+            Str::uuid()->toString() . '.jpg';
+        $thumbPath = $thumbDir . '/' . $thumbFilename;
+        $outputPath = $disk->path($thumbPath);
+
+        $command = sprintf(
+            '%s -y -i %s -ss 00:00:01 -vframes 1 -q:v 2 %s 2>&1',
+            escapeshellcmd($ffmpegPath),
+            escapeshellarg($inputPath),
+            escapeshellarg($outputPath)
+        );
+        @shell_exec($command);
+
+        return $disk->exists($thumbPath) ? $thumbPath : null;
     }
 }

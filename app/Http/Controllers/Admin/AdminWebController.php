@@ -348,6 +348,53 @@ class AdminWebController extends Controller
         }
     }
 
+    /**
+     * Flames preview (chat streak levels)
+     */
+    public function flamesPreview()
+    {
+        $yellowDays = (int) Setting::get('chat_flame_yellow_days', 2);
+        $orangeDays = (int) Setting::get('chat_flame_orange_days', 7);
+        $purpleDays = (int) Setting::get('chat_flame_purple_days', 30);
+
+        $previewRows = [
+            [
+                'label' => 'Aucun streak',
+                'count' => max(0, $yellowDays - 1),
+                'level' => 'none',
+                'color' => null,
+            ],
+            [
+                'label' => "Flamme jaune (>= {$yellowDays} jours)",
+                'count' => $yellowDays,
+                'level' => 'yellow',
+                'color' => '#FFD700',
+            ],
+            [
+                'label' => "Flamme orange (>= {$orangeDays} jours)",
+                'count' => $orangeDays,
+                'level' => 'orange',
+                'color' => '#FF6B35',
+            ],
+            [
+                'label' => "Flamme violette (>= {$purpleDays} jours)",
+                'count' => $purpleDays,
+                'level' => 'purple',
+                'color' => '#9B59B6',
+            ],
+        ];
+
+        $thresholds = [
+            'yellow' => $yellowDays,
+            'orange' => $orangeDays,
+            'purple' => $purpleDays,
+        ];
+
+        $isOrdered = $yellowDays <= $orangeDays && $orangeDays <= $purpleDays;
+
+        return view('admin.settings.flames-preview', compact('previewRows', 'thresholds', 'isOrdered'));
+    }
+
     // ==================== PROFILE ====================
 
     /**

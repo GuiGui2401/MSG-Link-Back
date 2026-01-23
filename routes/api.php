@@ -125,11 +125,14 @@ Route::prefix('v1')->group(function () {
             Route::put('/password', [UserController::class, 'changePassword']);
             Route::post('/avatar', [UserController::class, 'uploadAvatar']);
             Route::delete('/avatar', [UserController::class, 'deleteAvatar']);
+            Route::post('/cover', [UserController::class, 'uploadCover']);
+            Route::delete('/cover', [UserController::class, 'deleteCover']);
             Route::get('/dashboard', [UserController::class, 'dashboard']);
             Route::get('/stats', [UserController::class, 'getStats']);
             Route::post('/fcm-token', [UserController::class, 'saveFcmToken']);
             Route::delete('/account', [UserController::class, 'deleteAccount']);
             Route::get('/share-link', [UserController::class, 'shareLink']);
+            Route::post('/recommendations/contacts', [UserController::class, 'recommendationsFromContacts']);
 
             // Blocages
             Route::get('/blocked', [UserController::class, 'blockedUsers']);
@@ -171,11 +174,14 @@ Route::prefix('v1')->group(function () {
             Route::post('/{confession}/like', [ConfessionController::class, 'like']);
             Route::delete('/{confession}/like', [ConfessionController::class, 'unlike']);
             Route::post('/{confession}/view', [ConfessionController::class, 'view']);
+            Route::post('/{confession}/share', [ConfessionController::class, 'share']);
             Route::post('/{confession}/promotion-impression', [ConfessionController::class, 'promotionImpression']);
             Route::post('/{confession}/promotion-click', [ConfessionController::class, 'promotionClick']);
             Route::post('/{confession}/reveal', [ConfessionController::class, 'reveal']);
             Route::post('/{confession}/report', [ConfessionController::class, 'report']);
             Route::post('/{confession}/comments', [ConfessionController::class, 'addComment']);
+            Route::post('/{confession}/comments/{comment}/like', [ConfessionController::class, 'likeComment']);
+            Route::delete('/{confession}/comments/{comment}/like', [ConfessionController::class, 'unlikeComment']);
             Route::delete('/{confession}/comments/{comment}', [ConfessionController::class, 'deleteComment']);
             Route::delete('/{confession}', [ConfessionController::class, 'destroy']);
         });

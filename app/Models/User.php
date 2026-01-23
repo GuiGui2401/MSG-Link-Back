@@ -30,6 +30,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'password',
         'original_pin',
         'avatar',
+        'cover_image',
         'bio',
         'is_verified',
         'is_premium',
@@ -118,6 +119,17 @@ class User extends Authenticatable implements MustVerifyEmail
             return asset('storage/' . $this->avatar);
         }
         return 'https://ui-avatars.com/api/?name=' . urlencode($this->full_name) . '&background=random';
+    }
+
+    /**
+     * URL de l'image de couverture
+     */
+    public function getCoverImageUrlAttribute(): ?string
+    {
+        if ($this->cover_image) {
+            return asset('storage/' . $this->cover_image);
+        }
+        return null;
     }
 
     /**

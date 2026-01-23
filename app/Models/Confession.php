@@ -31,6 +31,7 @@ class Confession extends Model
         'revealed_at',
         'likes_count',
         'views_count',
+        'shares_count',
         'is_anonymous',
     ];
 
@@ -40,6 +41,7 @@ class Confession extends Model
         'revealed_at' => 'datetime',
         'likes_count' => 'integer',
         'views_count' => 'integer',
+        'shares_count' => 'integer',
         'is_anonymous' => 'boolean',
     ];
 
@@ -353,6 +355,22 @@ class Confession extends Model
 
         // Incrémenter le compteur
         $this->increment('views_count');
+    }
+
+    /**
+     * Incrémenter le compteur de partages
+     */
+    public function incrementShares(?User $user = null): void
+    {
+        if (!$user) {
+            return;
+        }
+
+        if ($this->author_id === $user->id) {
+            return;
+        }
+
+        $this->increment('shares_count');
     }
 
     /**

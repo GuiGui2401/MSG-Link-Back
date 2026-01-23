@@ -20,14 +20,6 @@ class UpdateSettingsRequest extends FormRequest
             'dark_mode' => 'nullable|boolean',
             'language' => 'nullable|string|in:fr,en',
             'theme' => 'nullable|string|in:light,dark,system',
-            'privacy' => 'nullable|array',
-            'privacy.show_online_status' => 'nullable|boolean',
-            'privacy.allow_messages_from_strangers' => 'nullable|boolean',
-            // Paramètres de confidentialité des publications
-            'show_online_status' => 'nullable|boolean',
-            'allow_anonymous_messages' => 'nullable|boolean',
-            'show_name_on_posts' => 'nullable|boolean',
-            'show_photo_on_posts' => 'nullable|boolean',
         ];
     }
 }

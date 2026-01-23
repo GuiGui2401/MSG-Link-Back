@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Setting;
 
 class Conversation extends Model
 {
@@ -279,10 +280,14 @@ class Conversation extends Model
      */
     protected function calculateFlameLevel(int $streakCount): string
     {
+        $yellowDays = (int) Setting::get('chat_flame_yellow_days', 2);
+        $orangeDays = (int) Setting::get('chat_flame_orange_days', 7);
+        $purpleDays = (int) Setting::get('chat_flame_purple_days', 30);
+
         return match (true) {
-            $streakCount >= 30 => self::FLAME_PURPLE,
-            $streakCount >= 7 => self::FLAME_ORANGE,
-            $streakCount >= 2 => self::FLAME_YELLOW,
+            $streakCount >= $purpleDays => self::FLAME_PURPLE,
+            $streakCount >= $orangeDays => self::FLAME_ORANGE,
+            $streakCount >= $yellowDays => self::FLAME_YELLOW,
             default => self::FLAME_NONE,
         };
     }

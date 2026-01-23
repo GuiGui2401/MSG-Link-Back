@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\Storage;
 
 class UserController extends Controller
 {
+    private const CONTACTS_RECOMMENDATION_LIMIT = 20;
+
     /**
      * Rechercher des utilisateurs
      */
@@ -29,7 +31,7 @@ class UserController extends Controller
         ]);
 
         $query = User::active()
-            ->select(['id', 'first_name', 'last_name', 'username', 'avatar', 'bio']);
+            ->select(['id', 'first_name', 'last_name', 'username', 'avatar', 'cover_image', 'bio']);
 
         if ($request->has('search')) {
             $query->search($request->search);
@@ -166,6 +168,31 @@ class UserController extends Controller
     }
 
     /**
+     * Upload d'image de couverture
+     */
+    public function uploadCover(Request $request): JsonResponse
+    {
+        $request->validate([
+            'cover_image' => 'required|image|mimes:jpeg,png,jpg,gif|max:4096',
+        ]);
+
+        $user = $request->user();
+
+        if ($user->cover_image) {
+            Storage::disk('public')->delete($user->cover_image);
+        }
+
+        $path = $request->file('cover_image')->store('covers', 'public');
+
+        $user->update(['cover_image' => $path]);
+
+        return response()->json([
+            'message' => 'Image de couverture mise à jour avec succès.',
+            'cover_url' => $user->fresh()->cover_image_url,
+        ]);
+    }
+
+    /**
      * Supprimer l'avatar
      */
     public function deleteAvatar(Request $request): JsonResponse
@@ -181,6 +208,85 @@ class UserController extends Controller
             'message' => 'Avatar supprimé.',
             'avatar_url' => $user->fresh()->avatar_url,
         ]);
+    }
+
+    /**
+     * Supprimer l'image de couverture
+     */
+    public function deleteCover(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($user->cover_image) {
+            Storage::disk('public')->delete($user->cover_image);
+            $user->update(['cover_image' => null]);
+        }
+
+        return response()->json([
+            'message' => 'Image de couverture supprimée.',
+            'cover_url' => $user->fresh()->cover_image_url,
+        ]);
+    }
+
+    /**
+     * Recommandations utilisateurs basées sur les contacts
+     */
+    public function recommendationsFromContacts(Request $request): JsonResponse
+    {
+        $request->validate([
+            'phones' => 'required|array|max:500',
+            'phones.*' => 'required|string|max:30',
+        ]);
+
+        $authUser = $request->user();
+        $phones = array_filter($request->input('phones', []), fn ($value) => !empty($value));
+        $normalizedInput = $this->normalizePhones($phones);
+        $normalizedLookup = array_flip($normalizedInput);
+
+        if (empty($normalizedInput)) {
+            return response()->json([
+                'users' => [],
+            ]);
+        }
+
+        $alreadyFollowing = $authUser->following()->pluck('users.id')->all();
+
+        $matches = User::active()
+            ->whereNotNull('phone')
+            ->where('id', '!=', $authUser->id)
+            ->whereNotIn('id', $alreadyFollowing)
+            ->get()
+            ->filter(function (User $user) use ($normalizedLookup) {
+                $normalizedPhone = $this->normalizePhone($user->phone);
+                return $normalizedPhone !== '' && isset($normalizedLookup[$normalizedPhone]);
+            })
+            ->take(self::CONTACTS_RECOMMENDATION_LIMIT)
+            ->values();
+
+        return response()->json([
+            'users' => UserPublicResource::collection($matches),
+        ]);
+    }
+
+    private function normalizePhones(array $phones): array
+    {
+        $normalized = [];
+        foreach ($phones as $phone) {
+            $value = $this->normalizePhone($phone);
+            if ($value !== '') {
+                $normalized[] = $value;
+            }
+        }
+        return array_values(array_unique($normalized));
+    }
+
+    private function normalizePhone(?string $phone): string
+    {
+        if (!$phone) {
+            return '';
+        }
+        $digits = preg_replace('/[^0-9]/', '', $phone);
+        return $digits ?? '';
     }
 
     /**

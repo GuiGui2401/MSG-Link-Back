@@ -304,8 +304,24 @@
                             <i class="fas fa-comments text-purple-600 mr-2"></i>
                             Chat & Flammes
                         </h4>
+                        @php
+                            $flameKeys = ['chat_flame_yellow_days', 'chat_flame_orange_days', 'chat_flame_purple_days'];
+                            $flameSettings = $chatSettings->whereIn('key', $flameKeys);
+                            $otherChatSettings = $chatSettings->whereNotIn('key', $flameKeys);
+                        @endphp
+                        <div class="mb-4">
+                            <p class="text-sm text-purple-700">
+                                <i class="fas fa-fire mr-2"></i>
+                                Configurez les paliers de couleur des flammes (Snapstreaks).
+                            </p>
+                            <a href="{{ route('admin.settings.flames-preview') }}"
+                               class="inline-flex items-center mt-3 px-3 py-2 text-xs font-semibold rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50 transition-colors">
+                                <i class="fas fa-eye mr-2"></i>
+                                Apercu des flammes
+                            </a>
+                        </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            @foreach($chatSettings as $setting)
+                            @foreach($flameSettings as $setting)
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-2">
                                     {{ $setting->description }}
@@ -313,10 +329,27 @@
                                 <input type="number"
                                        name="{{ $setting->key }}"
                                        value="{{ old($setting->key, $setting->value) }}"
+                                       step="1"
                                        class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors">
                             </div>
                             @endforeach
                         </div>
+                        @if($otherChatSettings->isNotEmpty())
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            @foreach($otherChatSettings as $setting)
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    {{ $setting->description }}
+                                </label>
+                                <input type="number"
+                                       name="{{ $setting->key }}"
+                                       value="{{ old($setting->key, $setting->value) }}"
+                                       step="1"
+                                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors">
+                            </div>
+                            @endforeach
+                        </div>
+                        @endif
                     </div>
 
                     <!-- Rate Limits -->

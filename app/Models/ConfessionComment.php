@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\Encryptable;
 
@@ -20,10 +21,12 @@ class ConfessionComment extends Model
         'is_anonymous',
         'media_url',
         'media_type',
+        'likes_count',
     ];
 
     protected $casts = [
         'is_anonymous' => 'boolean',
+        'likes_count' => 'integer',
     ];
 
     protected $appends = [
@@ -59,6 +62,15 @@ class ConfessionComment extends Model
     public function parent(): BelongsTo
     {
         return $this->belongsTo(ConfessionComment::class, 'parent_id');
+    }
+
+    /**
+     * Utilisateurs qui ont liké le commentaire
+     */
+    public function likedBy(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'confession_comment_likes', 'comment_id', 'user_id')
+            ->withTimestamps();
     }
 
     // ==================== ACCESSORS ====================

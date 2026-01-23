@@ -41,6 +41,7 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::get('/revenue', [AdminWebController::class, 'revenue'])->name('admin.revenue');
     Route::get('/settings', [AdminWebController::class, 'settings'])->name('admin.settings');
     Route::put('/settings', [AdminWebController::class, 'updateSettings'])->name('admin.settings.update');
+    Route::get('/settings/flames-preview', [AdminWebController::class, 'flamesPreview'])->name('admin.settings.flames-preview');
 
     // Profile
     Route::get('/profile', [AdminWebController::class, 'profile'])->name('admin.profile');

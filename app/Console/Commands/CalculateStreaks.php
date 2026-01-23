@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Conversation;
+use App\Models\Setting;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -81,10 +82,14 @@ class CalculateStreaks extends Command
 
     private function calculateFlameLevel(int $streakCount): string
     {
+        $yellowDays = (int) Setting::get('chat_flame_yellow_days', 2);
+        $orangeDays = (int) Setting::get('chat_flame_orange_days', 7);
+        $purpleDays = (int) Setting::get('chat_flame_purple_days', 30);
+
         return match (true) {
-            $streakCount >= 30 => Conversation::FLAME_PURPLE,
-            $streakCount >= 7 => Conversation::FLAME_ORANGE,
-            $streakCount >= 2 => Conversation::FLAME_YELLOW,
+            $streakCount >= $purpleDays => Conversation::FLAME_PURPLE,
+            $streakCount >= $orangeDays => Conversation::FLAME_ORANGE,
+            $streakCount >= $yellowDays => Conversation::FLAME_YELLOW,
             default => Conversation::FLAME_NONE,
         };
     }

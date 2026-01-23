@@ -13,7 +13,16 @@ class ConfessionResource extends JsonResource
         // Auteur affiché si: post public ET pas anonyme, OU identité révélée
         $shouldShowAuthor = ($this->is_public && !$this->is_anonymous) || $this->is_identity_revealed;
 
-        $promotion = $this->activePromotion();
+        $promotion = null;
+        $promotionId = $this->promotion_id ?? null;
+        if ($promotionId === null) {
+            $promotion = $this->activePromotion();
+            $promotionId = $promotion?->id;
+        } elseif ($this->relationLoaded('promotions')) {
+            $promotion = $this->promotions
+                ->where('status', \App\Models\PostPromotion::STATUS_ACTIVE)
+                ->first();
+        }
 
         return [
             'id' => $this->id,
@@ -42,8 +51,8 @@ class ConfessionResource extends JsonResource
                 'is_verified' => $this->author->is_verified ?? false,
             ] : null,
             'is_identity_revealed' => $this->is_identity_revealed,
-            'is_sponsored' => $this->isPromoted(),
-            'promotion_id' => optional($this->activePromotion())->id,
+            'is_sponsored' => $promotionId !== null,
+            'promotion_id' => $promotionId,
             'promotion' => $promotion ? [
                 'id' => $promotion->id,
                 'goal' => $promotion->goal,
@@ -60,6 +69,7 @@ class ConfessionResource extends JsonResource
             // Stats pour confessions publiques
             'likes_count' => $this->when($this->is_public, $this->liked_by_count ?? $this->likes_count ?? 0),
             'views_count' => $this->when($this->is_public, $this->views_count ?? 0),
+            'shares_count' => $this->when($this->is_public, $this->shares_count ?? 0),
             'comments_count' => $this->when($this->is_public, $this->comments_count ?? 0),
             'is_liked' => $this->when(isset($this->is_liked), $this->is_liked),
 

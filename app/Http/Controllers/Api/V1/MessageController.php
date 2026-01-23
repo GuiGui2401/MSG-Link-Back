@@ -86,6 +86,7 @@ class MessageController extends Controller
         // Marquer comme lu si destinataire
         if ($message->recipient_id === $user->id) {
             $message->markAsRead();
+            $message->refresh();
         }
 
         return response()->json([
@@ -146,7 +147,14 @@ class MessageController extends Controller
         ]);
 
         // Déclencher l'événement
-        event(new MessageSent($message));
+        try {
+            event(new MessageSent($message));
+        } catch (\Illuminate\Broadcasting\BroadcastException $e) {
+            \Log::warning('Broadcast MessageSent failed', [
+                'message_id' => $message->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         // Envoyer notification
         $this->notificationService->sendNewMessageNotification($message);
