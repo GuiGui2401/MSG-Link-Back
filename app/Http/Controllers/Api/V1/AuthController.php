@@ -102,12 +102,13 @@ class AuthController extends Controller
 
         \Log::info('✅ [AUTH_CONTROLLER] Utilisateur trouvé: ' . $user->username . ' (ID: ' . $user->id . ')');
 
-        if (!Hash::check($validated['password'], $user->original_pin ? Hash::make($user->original_pin) : $user->password)) {
+        if (!Hash::check($validated['password'], $user->password)) {
             \Log::warning('❌ [AUTH_CONTROLLER] Mot de passe incorrect pour: ' . $user->username);
             throw ValidationException::withMessages([
                 'login' => ['Les identifiants fournis sont incorrects.'],
             ]);
         }
+
 
         \Log::info('✅ [AUTH_CONTROLLER] Mot de passe correct');
 

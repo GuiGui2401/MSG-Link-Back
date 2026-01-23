@@ -103,11 +103,12 @@ class MessageController extends Controller
         $recipient = User::where('username', $username)->firstOrFail();
 
         // Vérifications
-        if ($sender->id === $recipient->id) {
-            return response()->json([
-                'message' => 'Vous ne pouvez pas vous envoyer un message.',
-            ], 422);
-        }
+        // if ($sender->id === $recipient->id) {
+        //     return response()->json([
+        //         'message' => 'Vous ne pouvez pas vous envoyer un message.',
+        //     ], 422);
+        // }
+
 
         if ($recipient->is_banned) {
             return response()->json([
