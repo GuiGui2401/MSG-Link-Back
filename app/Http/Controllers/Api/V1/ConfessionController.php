@@ -411,6 +411,11 @@ class ConfessionController extends Controller
         if ($request->hasFile('image')) {
             $image = $request->file('image');
             $path = $image->store('confessions', 'public');
+            \Illuminate\Support\Facades\Log::debug('[ConfessionController] Image Uploaded', [
+                'path' => $path,
+                'original_size' => $image->getSize(),
+                'saved_size' => \Illuminate\Support\Facades\Storage::disk('public')->size($path),
+            ]);
             $confessionData['image'] = $path;
         }
 
@@ -418,6 +423,11 @@ class ConfessionController extends Controller
         if ($request->hasFile('video')) {
             $video = $request->file('video');
             $path = $video->store('confessions/videos', 'public');
+            \Illuminate\Support\Facades\Log::debug('[ConfessionController] Video Uploaded', [
+                'path' => $path,
+                'original_size' => $video->getSize(),
+                'saved_size' => \Illuminate\Support\Facades\Storage::disk('public')->size($path),
+            ]);
             $confessionData['video'] = $path;
         }
 

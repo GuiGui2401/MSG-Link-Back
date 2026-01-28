@@ -15,8 +15,8 @@ class CreateConfessionRequest extends FormRequest
     {
         return [
             'content' => 'nullable|string|max:2000',
-            'type' => 'required|in:private,public',
-            'recipient_username' => 'required_if:type,private|nullable|string|exists:users,username',
+            'type' => 'nullable|string', // Règle assouplie
+            'recipient_username' => 'nullable|string', // Règle assouplie
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:10240',
             'video' => 'nullable|mimetypes:video/mp4,video/quicktime,video/x-msvideo,video/webm,video/x-matroska|max:102400',
             'is_anonymous' => 'nullable|boolean',
@@ -26,9 +26,32 @@ class CreateConfessionRequest extends FormRequest
     public function withValidator($validator)
     {
         $validator->after(function ($validator) {
+            $type = $this->input('type');
+            $content = $this->input('content');
+            $recipient = $this->input('recipient_username');
+
             // Au moins un contenu (texte, image ou vidéo) doit être fourni
-            if (empty($this->content) && !$this->hasFile('image') && !$this->hasFile('video')) {
+            if (empty($content) && !$this->hasFile('image') && !$this->hasFile('video')) {
                 $validator->errors()->add('content', 'Veuillez fournir du texte, une image ou une vidéo.');
+            }
+
+            // Validation manuelle de 'type'
+            if (empty($type)) {
+                $validator->errors()->add('type', 'Le type de confession est obligatoire.');
+            } elseif (!in_array($type, ['private', 'public'])) {
+                $validator->errors()->add('type', 'Le type doit être "private" ou "public".');
+            }
+
+            // Validation manuelle de 'recipient_username' si le type est privé
+            if ($type === 'private') {
+                if (empty($recipient)) {
+                    $validator->errors()->add('recipient_username', 'Un destinataire est requis pour une confession privée.');
+                } else {
+                    // Vérification manuelle de l'existence de l'utilisateur
+                    if (!\App\Models\User::where('username', $recipient)->exists()) {
+                        $validator->errors()->add('recipient_username', 'Le destinataire n\'existe pas.');
+                    }
+                }
             }
         });
     }

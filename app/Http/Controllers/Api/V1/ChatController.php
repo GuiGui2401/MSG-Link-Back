@@ -245,38 +245,38 @@ class ChatController extends Controller
         if ($request->hasFile('voice')) {
             $voice = $request->file('voice');
             $path = $voice->store('chat_messages/voices', 'public');
+            \Illuminate\Support\Facades\Log::debug('[ChatController] Voice Uploaded', [
+                'path' => $path,
+                'original_size' => $voice->getSize(),
+                'saved_size' => \Illuminate\Support\Facades\Storage::disk('public')->size($path),
+            ]);
             $messageData['voice_url'] = $path;
             $messageData['type'] = ChatMessage::TYPE_VOICE;
             $messageData['voice_effect'] = $validated['voice_effect'] ?? null;
-            Log::info('[ChatMessage] voice uploaded', [
-                'conversation_id' => $conversation->id,
-                'path' => $path,
-                'exists' => Storage::disk('public')->exists($path),
-            ]);
         }
 
         if ($request->hasFile('video')) {
             $video = $request->file('video');
             $path = $video->store('chat_messages/videos', 'public');
+            \Illuminate\Support\Facades\Log::debug('[ChatController] Video Uploaded', [
+                'path' => $path,
+                'original_size' => $video->getSize(),
+                'saved_size' => \Illuminate\Support\Facades\Storage::disk('public')->size($path),
+            ]);
             $messageData['video_url'] = $path;
             $messageData['type'] = ChatMessage::TYPE_VIDEO;
-            Log::info('[ChatMessage] video uploaded', [
-                'conversation_id' => $conversation->id,
-                'path' => $path,
-                'exists' => Storage::disk('public')->exists($path),
-            ]);
         }
 
         if ($request->hasFile('image')) {
             $image = $request->file('image');
             $path = $image->store('chat_messages/images', 'public');
+            \Illuminate\Support\Facades\Log::debug('[ChatController] Image Uploaded', [
+                'path' => $path,
+                'original_size' => $image->getSize(),
+                'saved_size' => \Illuminate\Support\Facades\Storage::disk('public')->size($path),
+            ]);
             $messageData['image_url'] = $path;
             $messageData['type'] = ChatMessage::TYPE_IMAGE;
-            Log::info('[ChatMessage] image uploaded', [
-                'conversation_id' => $conversation->id,
-                'path' => $path,
-                'exists' => Storage::disk('public')->exists($path),
-            ]);
         }
 
         // Créer le message

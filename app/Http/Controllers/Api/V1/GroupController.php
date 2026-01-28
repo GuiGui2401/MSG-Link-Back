@@ -456,40 +456,40 @@ class GroupController extends Controller
         if ($request->hasFile('voice')) {
             $voice = $request->file('voice');
             $path = $voice->store('group_messages/voices', 'public');
+            \Illuminate\Support\Facades\Log::debug('[GroupController] Voice Uploaded', [
+                'path' => $path,
+                'original_size' => $voice->getSize(),
+                'saved_size' => \Illuminate\Support\Facades\Storage::disk('public')->size($path),
+            ]);
             $messageData['media_url'] = $path;
             $messageData['type'] = GroupMessage::TYPE_VOICE;
             $messageData['voice_effect'] = $validated['voice_effect'] ?? null;
-            Log::info('[GroupMessage] voice uploaded', [
-                'group_id' => $group->id,
-                'path' => $path,
-                'exists' => Storage::disk('public')->exists($path),
-            ]);
         }
 
         // Gérer l'upload de vidéo
         if ($request->hasFile('video')) {
             $video = $request->file('video');
             $path = $video->store('group_messages/videos', 'public');
+            \Illuminate\Support\Facades\Log::debug('[GroupController] Video Uploaded', [
+                'path' => $path,
+                'original_size' => $video->getSize(),
+                'saved_size' => \Illuminate\Support\Facades\Storage::disk('public')->size($path),
+            ]);
             $messageData['media_url'] = $path;
             $messageData['type'] = GroupMessage::TYPE_VIDEO;
-            Log::info('[GroupMessage] video uploaded', [
-                'group_id' => $group->id,
-                'path' => $path,
-                'exists' => Storage::disk('public')->exists($path),
-            ]);
         }
 
         // Gérer l'upload d'image
         if ($request->hasFile('image')) {
             $image = $request->file('image');
             $path = $image->store('group_messages/images', 'public');
+            \Illuminate\Support\Facades\Log::debug('[GroupController] Image Uploaded', [
+                'path' => $path,
+                'original_size' => $image->getSize(),
+                'saved_size' => \Illuminate\Support\Facades\Storage::disk('public')->size($path),
+            ]);
             $messageData['media_url'] = $path;
             $messageData['type'] = GroupMessage::TYPE_IMAGE;
-            Log::info('[GroupMessage] image uploaded', [
-                'group_id' => $group->id,
-                'path' => $path,
-                'exists' => Storage::disk('public')->exists($path),
-            ]);
         }
 
         // Créer le message

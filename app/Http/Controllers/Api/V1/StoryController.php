@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+
+use App\Http\Requests\Story\StoreStoryRequest;
 use App\Http\Resources\StoryResource;
 use App\Models\PremiumSubscription;
 use App\Models\Story;
@@ -215,26 +217,10 @@ class StoryController extends Controller
     /**
      * Créer une story
      */
-    public function store(Request $request): JsonResponse
+    public function store(StoreStoryRequest $request): JsonResponse
     {
         $user = $request->user();
-
-        $validator = Validator::make($request->all(), [
-            'type' => 'required|in:image,video,text',
-            'media' => 'required_if:type,image,video|file|max:51200', // 50MB max pour vidéos
-            'content' => 'required_if:type,text|string|max:500',
-            'background_color' => 'nullable|string|max:7', // Format hex: #RRGGBB
-            'duration' => 'nullable|integer|min:3|max:60', // 3 à 60 secondes pour les vidéos
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Données invalides.',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
-
-        $validated = $validator->validated();
+        $validated = $request->validated();
 
         $storyData = [
             'user_id' => $user->id,
@@ -247,14 +233,19 @@ class StoryController extends Controller
         if (in_array($validated['type'], ['image', 'video']) && $request->hasFile('media')) {
             $media = $request->file('media');
 
-            if ($validated['type'] === 'image') {
-                // Valider le type MIME pour les images
-                if (!in_array($media->getMimeType(), ['image/jpeg', 'image/png', 'image/gif', 'image/webp'])) {
-                    return response()->json([
-                        'message' => 'Le fichier doit être une image (JPEG, PNG, GIF, WebP).',
-                    ], 422);
-                }
-            } else {
+            // Sauvegarder le média
+            $path = $media->store('stories/' . $user->id, 'public');
+            
+            \Illuminate\Support\Facades\Log::debug('[StoryController] Media Uploaded', [
+                'type' => $validated['type'],
+                'path' => $path,
+                'original_size' => $media->getSize(),
+                'saved_size' => \Illuminate\Support\Facades\Storage::disk('public')->size($path),
+            ]);
+
+            $storyData['media_url'] = $path;
+
+            if ($validated['type'] === 'video') {
                 // Valider le type MIME pour les vidéos
                 $allowedVideoMimes = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm', 'video/x-matroska'];
                 if (!in_array($media->getMimeType(), $allowedVideoMimes)) {
@@ -262,16 +253,17 @@ class StoryController extends Controller
                         'message' => 'Le fichier doit être une vidéo (MP4, MOV, AVI, WebM, MKV).',
                     ], 422);
                 }
-            }
 
-            // Sauvegarder le média
-            $path = $media->store('stories/' . $user->id, 'public');
-            $storyData['media_url'] = $path;
-
-            if ($validated['type'] === 'video') {
                 $thumbnailPath = $this->generateVideoThumbnail($path, $user->id);
                 if ($thumbnailPath) {
                     $storyData['thumbnail_url'] = $thumbnailPath;
+                }
+            } else {
+                 // Valider le type MIME pour les images
+                if (!in_array($media->getMimeType(), ['image/jpeg', 'image/png', 'image/gif', 'image/webp'])) {
+                    return response()->json([
+                        'message' => 'Le fichier doit être une image (JPEG, PNG, GIF, WebP).',
+                    ], 422);
                 }
             }
         }
