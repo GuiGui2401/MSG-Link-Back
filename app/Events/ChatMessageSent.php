@@ -51,7 +51,13 @@ class ChatMessageSent implements ShouldBroadcastNow
             'content' => $this->message->content,
             'type' => $this->message->type,
             'created_at' => $this->message->created_at->toIso8601String(),
+            'is_mine' => $this->message->sender_id === auth()->id(),
         ];
+
+        if (in_array($this->message->type, [ChatMessage::TYPE_IMAGE, ChatMessage::TYPE_VOICE, ChatMessage::TYPE_VIDEO])) {
+            $data['media_url'] = $this->message->media_url;
+            $data['media_full_url'] = $this->message->media_full_url;
+        }
 
         // Ajouter les données du cadeau si c'est un message de type gift
         if ($this->message->type === ChatMessage::TYPE_GIFT && $this->message->giftTransaction) {

@@ -45,6 +45,14 @@ class GroupMessageSent implements ShouldBroadcastNow
             'type' => $this->message->type,
             'reply_to_message_id' => $this->message->reply_to_message_id,
             'created_at' => $this->message->created_at->toIso8601String(),
+            'is_own' => $this->message->sender_id === auth()->id(),
         ];
+
+        if (in_array($this->message->type, [GroupMessage::TYPE_IMAGE, GroupMessage::TYPE_VOICE, GroupMessage::TYPE_VIDEO])) {
+            $data['media_url'] = $this->message->media_url;
+            $data['media_full_url'] = $this->message->media_full_url;
+        }
+
+        return $data;
     }
 }
