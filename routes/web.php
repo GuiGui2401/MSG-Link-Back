@@ -203,9 +203,37 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     });
 });
 
-// Redirection vers le profil utilisateur (pour les liens partagés)
-Route::get('/m/{userId}', function ($userId) {
-    // Vérifier que l'utilisateur existe
+// ==================== DEEP LINK REDIRECT ====================
+
+/**
+ * Redirige vers l'app si installée, sinon vers le Play Store.
+ * Gère les formats: /u/{username}, /m/{userId}, /post/{id}, /{username}
+ */
+$deepLinkRedirect = function (string $appDeepLink) {
+    $playStoreUrl = 'https://play.google.com/store/apps/details?id=app.weylo.mobile';
+
+    return response()->make(view('deep-link-redirect', [
+        'appDeepLink' => $appDeepLink,
+        'playStoreUrl' => $playStoreUrl,
+        'username' => null,
+    ]), 200, ['Content-Type' => 'text/html']);
+};
+
+// Lien profil: /u/{username}
+Route::get('/u/{username}', function ($username) use ($deepLinkRedirect) {
+    $user = \App\Models\User::where('username', $username)
+        ->where('is_banned', false)
+        ->first();
+
+    if (!$user) {
+        abort(404, 'Utilisateur introuvable');
+    }
+
+    return $deepLinkRedirect("weylo://u/{$username}");
+})->name('user.profile.username');
+
+// Lien message anonyme: /m/{userId}
+Route::get('/m/{userId}', function ($userId) use ($deepLinkRedirect) {
     $user = \App\Models\User::where('id', $userId)
         ->where('is_banned', false)
         ->first();
@@ -214,10 +242,19 @@ Route::get('/m/{userId}', function ($userId) {
         abort(404, 'Utilisateur introuvable');
     }
 
-    // Rediriger vers le frontend React
-    $frontendUrl = env('APP_FRONTEND_URL', 'http://localhost:3000');
-    return redirect("{$frontendUrl}/m/{$userId}");
+    return $deepLinkRedirect("weylo://u/{$user->username}");
 })->name('user.profile');
+
+// Lien vers un post/confession: /post/{id}
+Route::get('/post/{id}', function ($id) use ($deepLinkRedirect) {
+    $confession = \App\Models\Confession::find($id);
+
+    if (!$confession) {
+        abort(404, 'Publication introuvable');
+    }
+
+    return $deepLinkRedirect("weylo://post/{$id}");
+})->whereNumber('id')->name('post.detail');
 
 // Page d'installation PWA
 Route::get('/install', function () {
@@ -231,3 +268,21 @@ Route::get('/health', function () {
         'timestamp' => now()->toIso8601String(),
     ]);
 });
+
+// Catch-all pour les liens directs: /{username} (DOIT être en dernier)
+Route::get('/{username}', function ($username) use ($deepLinkRedirect) {
+    // Ignorer les chemins qui ressemblent à des fichiers ou routes admin
+    if (str_contains($username, '.') || $username === 'admin') {
+        abort(404);
+    }
+
+    $user = \App\Models\User::where('username', $username)
+        ->where('is_banned', false)
+        ->first();
+
+    if (!$user) {
+        abort(404, 'Utilisateur introuvable');
+    }
+
+    return $deepLinkRedirect($username);
+})->where('username', '^[a-zA-Z0-9_]+$');

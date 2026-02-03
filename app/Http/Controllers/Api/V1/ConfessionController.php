@@ -824,11 +824,19 @@ class ConfessionController extends Controller
     /**
      * Liker un commentaire
      */
-    public function likeComment(Request $request, Confession $confession, ConfessionComment $comment): JsonResponse
+    public function likeComment(Request $request, int $confessionId, int $commentId): JsonResponse
     {
         $user = $request->user();
 
-        if ($comment->confession_id !== $confession->id) {
+        $confession = Confession::find($confessionId);
+        if (!$confession) {
+            return $this->JsonResponse([
+                'message' => 'Confession non trouvée.',
+            ], 404);
+        }
+
+        $comment = ConfessionComment::find($commentId);
+        if (!$comment || $comment->confession_id !== $confession->id) {
             return $this->JsonResponse([
                 'message' => 'Commentaire non trouvé.',
             ], 404);
@@ -850,11 +858,19 @@ class ConfessionController extends Controller
     /**
      * Retirer un like d'un commentaire
      */
-    public function unlikeComment(Request $request, Confession $confession, ConfessionComment $comment): JsonResponse
+    public function unlikeComment(Request $request, int $confessionId, int $commentId): JsonResponse
     {
         $user = $request->user();
 
-        if ($comment->confession_id !== $confession->id) {
+        $confession = Confession::find($confessionId);
+        if (!$confession) {
+            return $this->JsonResponse([
+                'message' => 'Confession non trouvée.',
+            ], 404);
+        }
+
+        $comment = ConfessionComment::find($commentId);
+        if (!$comment || $comment->confession_id !== $confession->id) {
             return $this->JsonResponse([
                 'message' => 'Commentaire non trouvé.',
             ], 404);
@@ -876,12 +892,19 @@ class ConfessionController extends Controller
     /**
      * Supprimer un commentaire
      */
-    public function deleteComment(Request $request, Confession $confession, ConfessionComment $comment): JsonResponse
+    public function deleteComment(Request $request, int $confessionId, int $commentId): JsonResponse
     {
         $user = $request->user();
 
-        // Vérifier que le commentaire appartient bien à cette confession
-        if ($comment->confession_id !== $confession->id) {
+        $confession = Confession::find($confessionId);
+        if (!$confession) {
+            return $this->JsonResponse([
+                'message' => 'Confession non trouvée.',
+            ], 404);
+        }
+
+        $comment = ConfessionComment::find($commentId);
+        if (!$comment || $comment->confession_id !== $confession->id) {
             return $this->JsonResponse([
                 'message' => 'Commentaire non trouvé.',
             ], 404);

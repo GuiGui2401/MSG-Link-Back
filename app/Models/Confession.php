@@ -374,33 +374,47 @@ class Confession extends Model
     }
 
     /**
-     * Liker la confession
+     * Liker la confession (atomique)
      */
     public function like(User $user): bool
     {
-        if ($this->likedBy()->where('user_id', $user->id)->exists()) {
-            return false;
-        }
+        return DB::transaction(function () use ($user) {
+            // Verrouiller la ligne pour éviter les race conditions
+            $confession = self::lockForUpdate()->find($this->id);
+            if (!$confession) return false;
 
-        $this->likedBy()->attach($user->id);
-        $this->increment('likes_count');
+            if ($confession->likedBy()->where('user_id', $user->id)->exists()) {
+                return false;
+            }
 
-        return true;
+            $confession->likedBy()->attach($user->id);
+            $confession->increment('likes_count');
+            $this->likes_count = $confession->likes_count;
+
+            return true;
+        });
     }
 
     /**
-     * Unliker la confession
+     * Unliker la confession (atomique)
      */
     public function unlike(User $user): bool
     {
-        if (!$this->likedBy()->where('user_id', $user->id)->exists()) {
-            return false;
-        }
+        return DB::transaction(function () use ($user) {
+            // Verrouiller la ligne pour éviter les race conditions
+            $confession = self::lockForUpdate()->find($this->id);
+            if (!$confession) return false;
 
-        $this->likedBy()->detach($user->id);
-        $this->decrement('likes_count');
+            if (!$confession->likedBy()->where('user_id', $user->id)->exists()) {
+                return false;
+            }
 
-        return true;
+            $confession->likedBy()->detach($user->id);
+            $confession->decrement('likes_count');
+            $this->likes_count = $confession->likes_count;
+
+            return true;
+        });
     }
 
     /**

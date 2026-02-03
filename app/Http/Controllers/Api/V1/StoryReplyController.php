@@ -51,12 +51,27 @@ class StoryReplyController extends Controller
     public function store(Request $request, Story $story): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'content' => 'required_without_all:media,emoji|string|max:1000',
+            'content' => 'nullable|string|max:1000',
             'type' => 'required|in:text,voice,image,emoji',
             'media' => 'nullable|file|max:10240', // 10MB max
             'voice_effect' => 'nullable|in:pitch_up,pitch_down,robot,chipmunk,deep',
-            'is_anonymous' => 'boolean',
+            'is_anonymous' => 'nullable|boolean',
         ]);
+
+        $validator->after(function ($validator) use ($request) {
+            $hasContent = $request->filled('content');
+            $hasMedia = $request->hasFile('media');
+            $type = $request->input('type');
+
+            // Pour les types text/emoji, le contenu est requis
+            if (in_array($type, ['text', 'emoji']) && !$hasContent) {
+                $validator->errors()->add('content', 'Le contenu est requis pour ce type de réponse.');
+            }
+            // Pour les types voice/image, le média est requis
+            if (in_array($type, ['voice', 'image']) && !$hasMedia) {
+                $validator->errors()->add('media', 'Le fichier média est requis pour ce type de réponse.');
+            }
+        });
 
         if ($validator->fails()) {
             return response()->json([
@@ -77,7 +92,8 @@ class StoryReplyController extends Controller
         }
 
         // Check if blocked
-        if ($currentUser->hasBlocked($story->user) || $story->user->hasBlocked($currentUser)) {
+        $storyOwner = $story->user;
+        if ($storyOwner && ($currentUser->hasBlocked($storyOwner) || $storyOwner->hasBlocked($currentUser))) {
             return response()->json([
                 'success' => false,
                 'message' => 'Action impossible',

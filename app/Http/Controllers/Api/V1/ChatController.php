@@ -285,8 +285,9 @@ class ChatController extends Controller
         // Mettre à jour la conversation
         $conversation->updateAfterMessage();
 
-        // Charger les relations
+        // Charger les relations (incluant conversation pour ChatMessageResource)
         $message->load([
+            'conversation',
             'sender:id,first_name,last_name,username,avatar',
             'anonymousMessage:id,content,created_at',
             'replyToMessage:id,content,type,image_url,voice_url,video_url,created_at',

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.weylo.mobile",
+      "sha256_cert_fingerprints": [
+        "43:31:D2:49:C9:83:D9:71:27:A5:93:9D:3B:43:DA:5C:E2:26:2C:74:AB:2F:72:A8:72:1E:C8:C6:6C:FD:B0:FF"
+      ]
+    }
+  }
+]
