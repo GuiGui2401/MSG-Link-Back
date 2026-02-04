@@ -7,6 +7,7 @@ use App\Models\Story;
 use App\Models\StoryReply;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
@@ -50,6 +51,15 @@ class StoryReplyController extends Controller
      */
     public function store(Request $request, Story $story): JsonResponse
     {
+        Log::info('Story reply attempt', [
+            'story_id' => $story->id,
+            'user_id' => $request->user()?->id,
+            'type' => $request->input('type'),
+            'has_content' => $request->filled('content'),
+            'has_media' => $request->hasFile('media'),
+            'story_active' => $story->isActive(),
+        ]);
+
         $validator = Validator::make($request->all(), [
             'content' => 'nullable|string|max:1000',
             'type' => 'required|in:text,voice,image,emoji',
@@ -74,6 +84,10 @@ class StoryReplyController extends Controller
         });
 
         if ($validator->fails()) {
+            Log::warning('Story reply validation failed', [
+                'story_id' => $story->id,
+                'errors' => $validator->errors()->toArray(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Données invalides',

@@ -23,6 +23,7 @@ class PremiumSubscription extends Model
         'starts_at',
         'expires_at',
         'auto_renew',
+        'last_reminder_sent_at',
     ];
 
     protected $casts = [
@@ -30,6 +31,7 @@ class PremiumSubscription extends Model
         'starts_at' => 'datetime',
         'expires_at' => 'datetime',
         'auto_renew' => 'boolean',
+        'last_reminder_sent_at' => 'datetime',
     ];
 
     /**
