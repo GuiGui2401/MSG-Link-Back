@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\ChatMessage;
 use App\Models\Story;
 use App\Models\StoryReply;
+use App\Events\ChatMessageSent;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -130,12 +132,52 @@ class StoryReplyController extends Controller
             'is_anonymous' => $request->boolean('is_anonymous', true),
         ]);
 
-        // TODO: Send notification to story owner
+        // Create anonymous chat conversation with the story owner
+        $conversationId = null;
+        if ($storyOwner && $currentUser->id !== $storyOwner->id) {
+            try {
+                $conversation = $currentUser->getOrCreateConversationWith($storyOwner);
+                $conversationId = $conversation->id;
+
+                // Determine chat message type and data
+                $chatType = ChatMessage::TYPE_TEXT;
+                $chatData = [
+                    'conversation_id' => $conversation->id,
+                    'sender_id' => $currentUser->id,
+                    'content' => $request->content ?? '',
+                    'type' => $chatType,
+                ];
+
+                if ($request->type === 'voice' && $mediaUrl) {
+                    $chatData['voice_url'] = $mediaUrl;
+                    $chatData['type'] = ChatMessage::TYPE_VOICE;
+                    $chatData['voice_effect'] = $request->voice_effect;
+                } elseif ($request->type === 'image' && $mediaUrl) {
+                    $chatData['image_url'] = $mediaUrl;
+                    $chatData['type'] = ChatMessage::TYPE_IMAGE;
+                }
+
+                $chatMessage = ChatMessage::create($chatData);
+                $conversation->updateAfterMessage();
+
+                try {
+                    broadcast(new ChatMessageSent($chatMessage))->toOthers();
+                } catch (\Exception $e) {
+                    Log::error('Story reply chat broadcast failed: ' . $e->getMessage());
+                }
+            } catch (\Exception $e) {
+                Log::error('Story reply chat creation failed', [
+                    'story_id' => $story->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         return response()->json([
             'success' => true,
             'message' => 'Réponse envoyée',
             'data' => $reply,
+            'conversation_id' => $conversationId,
         ], 201);
     }
 
