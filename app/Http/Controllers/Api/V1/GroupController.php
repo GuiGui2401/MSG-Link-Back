@@ -262,7 +262,12 @@ class GroupController extends Controller
 
         // Récupérer le groupe selon le paramètre fourni
         if (!empty($validated['invite_code'])) {
-            $group = Group::where('invite_code', $validated['invite_code'])->firstOrFail();
+            $group = Group::where('invite_code', $validated['invite_code'])->first();
+            if (!$group) {
+                return response()->json([
+                    'message' => 'Code d\'invitation invalide ou expiré.',
+                ], 422);
+            }
         } else {
             $group = Group::findOrFail($validated['group_id']);
 

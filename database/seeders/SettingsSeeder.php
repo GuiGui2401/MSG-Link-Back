@@ -326,6 +326,75 @@ class SettingsSeeder extends Seeder
                 'description' => 'Durée de session (jours)',
             ],
 
+            // ==================== GROUPS ====================
+            [
+                'key' => 'group_max_members_default',
+                'value' => '50',
+                'type' => 'integer',
+                'group' => 'groups',
+                'description' => 'Nombre maximum de membres par groupe (par défaut)',
+            ],
+            [
+                'key' => 'group_max_members_premium',
+                'value' => '200',
+                'type' => 'integer',
+                'group' => 'groups',
+                'description' => 'Nombre maximum de membres par groupe (premium)',
+            ],
+            [
+                'key' => 'group_max_per_user',
+                'value' => '10',
+                'type' => 'integer',
+                'group' => 'groups',
+                'description' => 'Nombre maximum de groupes par utilisateur',
+            ],
+
+            // ==================== PROMOTIONS / BOOST ====================
+            [
+                'key' => 'promotion_min_budget',
+                'value' => '1000',
+                'type' => 'decimal',
+                'group' => 'promotions',
+                'description' => 'Budget minimum pour une promotion (en FCFA)',
+            ],
+            [
+                'key' => 'promotion_min_duration_days',
+                'value' => '1',
+                'type' => 'integer',
+                'group' => 'promotions',
+                'description' => 'Durée minimum d\'une promotion (en jours)',
+            ],
+            [
+                'key' => 'promotion_max_duration_days',
+                'value' => '7',
+                'type' => 'integer',
+                'group' => 'promotions',
+                'description' => 'Durée maximum d\'une promotion (en jours)',
+            ],
+            [
+                'key' => 'promotion_platform_fee_percent',
+                'value' => '10',
+                'type' => 'decimal',
+                'group' => 'promotions',
+                'description' => 'Commission plateforme sur les promotions (%)',
+            ],
+            [
+                'key' => 'promotion_allow_images',
+                'value' => '1',
+                'type' => 'boolean',
+                'group' => 'promotions',
+                'description' => 'Autoriser la promotion d\'images (pas seulement vidéos)',
+            ],
+
+            // ==================== DEPOSIT / WITHDRAWAL ====================
+            [
+                'key' => 'deposit_min_amount',
+                'value' => '500',
+                'type' => 'decimal',
+                'group' => 'wallet',
+                'description' => 'Montant minimum de dépôt (en FCFA)',
+            ],
+
             // ==================== GENERAL ====================
             [
                 'key' => 'app_name',

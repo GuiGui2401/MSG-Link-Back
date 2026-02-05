@@ -44,6 +44,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'last_seen_at',
         'settings',
         'role',
+        'is_system_user',
         'fcm_token',
     ];
 
@@ -75,6 +76,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'settings' => 'array',
         'wallet_balance' => 'decimal:2',
         'promotion_balance' => 'decimal:2',
+        'is_system_user' => 'boolean',
     ];
 
     /**
@@ -161,6 +163,16 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function canManage(User $user): bool
     {
+        // Personne ne peut gérer un utilisateur système sauf lui-même
+        if ($user->is_system_user && !$this->is_system_user) {
+            return false;
+        }
+
+        // Un utilisateur système peut tout gérer
+        if ($this->is_system_user) {
+            return $this->id !== $user->id;
+        }
+
         // Un superadmin peut gérer tout le monde sauf lui-même
         if ($this->is_super_admin) {
             return $this->id !== $user->id;
@@ -467,6 +479,35 @@ class User extends Authenticatable implements MustVerifyEmail
     public function scopeAdmins($query)
     {
         return $query->where('role', 'admin');
+    }
+
+    /**
+     * Scope pour exclure les utilisateurs système
+     * Ces utilisateurs sont invisibles pour les autres admins/superadmins
+     */
+    public function scopeExcludeSystemUsers($query)
+    {
+        return $query->where(function ($q) {
+            $q->where('is_system_user', false)
+              ->orWhereNull('is_system_user');
+        });
+    }
+
+    /**
+     * Scope pour les utilisateurs visibles dans l'admin
+     * Exclut les utilisateurs système sauf pour les utilisateurs système eux-mêmes
+     */
+    public function scopeVisibleInAdmin($query)
+    {
+        $currentUser = auth()->user();
+
+        // Si l'utilisateur actuel est un utilisateur système, il peut tout voir
+        if ($currentUser && $currentUser->is_system_user) {
+            return $query;
+        }
+
+        // Sinon, exclure les utilisateurs système
+        return $query->excludeSystemUsers();
     }
 
     /**

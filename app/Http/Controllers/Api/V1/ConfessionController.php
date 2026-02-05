@@ -740,11 +740,21 @@ class ConfessionController extends Controller
         }
 
         $validated = $request->validate([
-            'content' => 'required_without:image|string|max:1000',
+            'content' => 'nullable|string|max:1000',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:10240',
             'is_anonymous' => 'boolean',
             'parent_id' => 'nullable|integer',
         ]);
+
+        // Vérifier qu'au moins un contenu est fourni (texte ou image)
+        $hasContent = !empty($validated['content']) && trim($validated['content']) !== '';
+        $hasImage = $request->hasFile('image');
+        if (!$hasContent && !$hasImage) {
+            return $this->JsonResponse([
+                'message' => 'Veuillez fournir un texte ou une image.',
+                'errors' => ['content' => ['Le contenu ou une image est requis.']],
+            ], 422);
+        }
 
         $parentId = $validated['parent_id'] ?? null;
         $parentComment = null;

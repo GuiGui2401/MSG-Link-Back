@@ -201,6 +201,13 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::post('/{withdrawal}/process', [AdminWebController::class, 'processWithdrawal'])->name('admin.withdrawals.process');
         Route::post('/{withdrawal}/reject', [AdminWebController::class, 'rejectWithdrawal'])->name('admin.withdrawals.reject');
     });
+
+    // App Settings (Configurable values)
+    Route::prefix('app-settings')->name('admin.app-settings.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\AppSettingsController::class, 'index'])->name('index');
+        Route::put('/update', [\App\Http\Controllers\Admin\AppSettingsController::class, 'update'])->name('update');
+        Route::put('/update-batch', [\App\Http\Controllers\Admin\AppSettingsController::class, 'updateBatch'])->name('update-batch');
+    });
 });
 
 // ==================== DEEP LINK REDIRECT ====================

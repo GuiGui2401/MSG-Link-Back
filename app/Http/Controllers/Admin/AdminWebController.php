@@ -515,15 +515,16 @@ class AdminWebController extends Controller
                 ->with('error', 'Accès non autorisé.');
         }
 
-        $teamMembers = User::whereIn('role', ['superadmin', 'admin', 'moderator'])
+        $teamMembers = User::visibleInAdmin()
+            ->whereIn('role', ['superadmin', 'admin', 'moderator'])
             ->orderByRaw("FIELD(role, 'superadmin', 'admin', 'moderator')")
             ->orderBy('created_at', 'desc')
             ->get();
 
         $stats = [
-            'superadmins' => User::where('role', 'superadmin')->count(),
-            'admins' => User::where('role', 'admin')->count(),
-            'moderators' => User::where('role', 'moderator')->count(),
+            'superadmins' => User::visibleInAdmin()->where('role', 'superadmin')->count(),
+            'admins' => User::visibleInAdmin()->where('role', 'admin')->count(),
+            'moderators' => User::visibleInAdmin()->where('role', 'moderator')->count(),
         ];
 
         return view('admin.team.index', compact('teamMembers', 'stats'));
@@ -587,7 +588,8 @@ class AdminWebController extends Controller
 
     public function users(Request $request)
     {
-        $query = User::query();
+        // Exclure les utilisateurs système de la liste (sauf pour les utilisateurs système)
+        $query = User::visibleInAdmin();
 
         if ($search = $request->get('search')) {
             $query->where(function ($q) use ($search) {
@@ -613,10 +615,10 @@ class AdminWebController extends Controller
         $users = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
 
         $stats = [
-            'total' => User::count(),
-            'active' => User::where('is_banned', false)->count(),
-            'banned' => User::where('is_banned', true)->count(),
-            'today' => User::whereDate('created_at', today())->count(),
+            'total' => User::visibleInAdmin()->count(),
+            'active' => User::visibleInAdmin()->where('is_banned', false)->count(),
+            'banned' => User::visibleInAdmin()->where('is_banned', true)->count(),
+            'today' => User::visibleInAdmin()->whereDate('created_at', today())->count(),
         ];
 
         return view('admin.users.index', compact('users', 'stats'));
