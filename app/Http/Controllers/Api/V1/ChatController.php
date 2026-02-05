@@ -155,6 +155,11 @@ class ChatController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 50));
 
+        // Injecter la conversation pour éviter le lazy loading dans ChatMessageResource
+        $messages->getCollection()->each(function ($msg) use ($conversation) {
+            $msg->setRelation('conversation', $conversation);
+        });
+
         return response()->json([
             'messages' => ChatMessageResource::collection($messages),
             'meta' => [

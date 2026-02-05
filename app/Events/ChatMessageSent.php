@@ -66,11 +66,14 @@ class ChatMessageSent implements ShouldBroadcast
                 'id' => $gift->id,
                 'name' => $gift->name,
                 'icon' => $gift->icon,
+                'animation' => $gift->animation,
                 'price' => $gift->price,
                 'formatted_price' => $gift->formatted_price,
                 'tier' => $gift->tier,
+                'tier_color' => $gift->tier_color,
                 'background_color' => $gift->background_color,
                 'description' => $gift->description,
+                'amount' => $this->message->giftTransaction->amount,
                 'is_anonymous' => $this->message->giftTransaction->is_anonymous,
             ];
         }
