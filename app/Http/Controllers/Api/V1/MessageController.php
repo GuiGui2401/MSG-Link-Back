@@ -146,38 +146,43 @@ class MessageController extends Controller
             'reply_to_message_id' => $validated['reply_to_message_id'] ?? null,
         ]);
 
-        // Déclencher l'événement
-        try {
-            event(new MessageSent($message));
-        } catch (\Illuminate\Broadcasting\BroadcastException $e) {
-            \Log::warning('Broadcast MessageSent failed', [
-                'message_id' => $message->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        // Déclencher broadcast, notification et SMS après l'envoi de la réponse HTTP
+        $notificationService = $this->notificationService;
+        $nexahService = $this->nexahService;
 
-        // Envoyer notification
-        $this->notificationService->sendNewMessageNotification($message);
-
-        // Envoyer SMS au destinataire si numéro valide
-        if ($recipient->phone && strlen(trim($recipient->phone)) > 5) {
+        dispatch(function () use ($message, $recipient, $validated, $notificationService, $nexahService) {
+            // Broadcast event
             try {
-                $smsMessage = "📩 Nouveau message anonyme sur Weylo!\n\n"
-                    . "« " . substr($validated['content'], 0, 100)
-                    . (strlen($validated['content']) > 100 ? '...' : '') . " »\n\n"
-                    . "Connectez-vous pour lire: " . config('app.frontend_url');
-
-                $this->nexahService->sendSms(
-                    $recipient->phone,
-                    $smsMessage
-                );
-
-                \Log::info("SMS envoyé au destinataire {$recipient->username} ({$recipient->phone})");
-            } catch (\Exception $e) {
-                \Log::error("Erreur lors de l'envoi du SMS: " . $e->getMessage());
-                // Ne pas bloquer l'envoi du message si l'SMS échoue
+                event(new MessageSent($message));
+            } catch (\Illuminate\Broadcasting\BroadcastException $e) {
+                \Log::warning('Broadcast MessageSent failed', [
+                    'message_id' => $message->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
-        }
+
+            // Notification push
+            $notificationService->sendNewMessageNotification($message);
+
+            // SMS au destinataire si numéro valide
+            if ($recipient->phone && strlen(trim($recipient->phone)) > 5) {
+                try {
+                    $smsMessage = "📩 Nouveau message anonyme sur Weylo!\n\n"
+                        . "« " . substr($validated['content'], 0, 100)
+                        . (strlen($validated['content']) > 100 ? '...' : '') . " »\n\n"
+                        . "Connectez-vous pour lire: " . config('app.frontend_url');
+
+                    $nexahService->sendSms(
+                        $recipient->phone,
+                        $smsMessage
+                    );
+
+                    \Log::info("SMS envoyé au destinataire {$recipient->username} ({$recipient->phone})");
+                } catch (\Exception $e) {
+                    \Log::error("Erreur lors de l'envoi du SMS: " . $e->getMessage());
+                }
+            }
+        })->afterResponse();
 
         return response()->json([
             'message' => 'Message envoyé avec succès.',

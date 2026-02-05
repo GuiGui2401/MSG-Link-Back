@@ -7,13 +7,19 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class ChatMessageResource extends JsonResource
 {
+    private static array $premiumCache = [];
+
     public function toArray(Request $request): array
     {
         $user = $request->user();
         $isMine = $this->sender_id === $user?->id;
 
-        // Vérifier si l'utilisateur a un premium pour cette conversation
-        $hasPremium = $this->conversation?->hasPremiumSubscription($user);
+        // Cache premium check per conversation to avoid N+1 queries
+        $conversationId = $this->conversation_id;
+        if (!isset(self::$premiumCache[$conversationId]) && $this->conversation && $user) {
+            self::$premiumCache[$conversationId] = $this->conversation->hasPremiumSubscription($user);
+        }
+        $hasPremium = self::$premiumCache[$conversationId] ?? false;
 
         // Si le sender est supprimé, retourner des données par défaut
         $senderData = null;
@@ -48,7 +54,7 @@ class ChatMessageResource extends JsonResource
 
             // Expéditeur
             'sender' => $senderData,
-            
+
             // Si c'est un message cadeau
             'gift_data' => $this->when($this->type === 'gift' && $this->relationLoaded('giftTransaction'), function () {
                 $gift = $this->giftTransaction?->gift;
@@ -85,6 +91,24 @@ class ChatMessageResource extends JsonResource
                     'media_url' => $this->replyToMessage->media_url,
                     'media_full_url' => $this->replyToMessage->media_full_url,
                     'created_at' => $this->replyToMessage->created_at->toIso8601String(),
+                ];
+            }),
+
+            // Si c'est une réponse à une story
+            'story_reply' => $this->when($this->relationLoaded('storyReply') && $this->storyReply, function () {
+                $storyReply = $this->storyReply;
+                $story = $storyReply->story;
+                return [
+                    'id' => $storyReply->id,
+                    'type' => $storyReply->type,
+                    'content' => $storyReply->content,
+                    'story' => $story ? [
+                        'id' => $story->id,
+                        'type' => $story->type,
+                        'media_url' => $story->media_full_url ?? $story->media_url,
+                        'text_content' => $story->text_content,
+                        'background_color' => $story->background_color,
+                    ] : null,
                 ];
             }),
 

@@ -23,6 +23,7 @@ class ChatMessage extends Model
         'video_url',
         'gift_transaction_id',
         'anonymous_message_id',
+        'story_reply_id',
         'reply_to_message_id',
         'is_read',
         'read_at',
@@ -93,6 +94,14 @@ class ChatMessage extends Model
     public function replyToMessage(): BelongsTo
     {
         return $this->belongsTo(ChatMessage::class, 'reply_to_message_id');
+    }
+
+    /**
+     * Réponse à une story (si ce message provient d'un story reply)
+     */
+    public function storyReply(): BelongsTo
+    {
+        return $this->belongsTo(StoryReply::class);
     }
 
     // ==================== ACCESSORS ====================

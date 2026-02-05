@@ -150,6 +150,7 @@ class ChatController extends Controller
                 'giftTransaction.gift',
                 'anonymousMessage:id,content,created_at',
                 'replyToMessage:id,content,type,image_url,voice_url,video_url,created_at',
+                'storyReply.story',
             ])
             ->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 50));
@@ -285,35 +286,24 @@ class ChatController extends Controller
         // Mettre à jour la conversation
         $conversation->updateAfterMessage();
 
-        // Charger les relations (incluant conversation pour ChatMessageResource)
+        // Charger les relations pour la réponse
         $message->load([
             'conversation',
             'sender:id,first_name,last_name,username,avatar',
-            'anonymousMessage:id,content,created_at',
-            'replyToMessage:id,content,type,image_url,voice_url,video_url,created_at',
         ]);
 
-        // Diffuser l'événement en temps réel
+        // Broadcast via queue (ShouldBroadcast, non-bloquant)
         try {
-            \Log::info('📤 [CHAT] Broadcasting ChatMessageSent', [
-                'message_id' => $message->id,
-                'conversation_id' => $conversation->id,
-                'sender_id' => $user->id,
-                'channel' => 'conversation.' . $conversation->id,
-            ]);
-
             broadcast(new ChatMessageSent($message))->toOthers();
-
-            \Log::info('✅ [CHAT] ChatMessageSent broadcasted successfully');
         } catch (\Exception $e) {
-            // Log l'erreur mais ne bloque pas l'envoi du message
-            \Log::error('❌ [CHAT] Broadcasting failed for message: ' . $e->getMessage());
-            \Log::error($e);
+            \Log::error('❌ [CHAT] Broadcasting failed: ' . $e->getMessage());
         }
 
-        // Notification push si l'autre utilisateur n'est pas en ligne
+        // Notification push en arrière-plan
         if (!$otherUser->is_online) {
-            $this->notificationService->sendChatMessageNotification($message);
+            dispatch(function () use ($message) {
+                $this->notificationService->sendChatMessageNotification($message);
+            })->afterResponse();
         }
 
         return response()->json([
