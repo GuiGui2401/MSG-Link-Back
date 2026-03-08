@@ -103,6 +103,7 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     // Users Management
     Route::prefix('users')->group(function () {
         Route::get('/', [AdminWebController::class, 'users'])->name('admin.users.index');
+        Route::delete('/bulk-delete', [AdminWebController::class, 'bulkDeleteUsers'])->name('admin.users.bulk-delete');
         Route::get('/{user}', [AdminWebController::class, 'showUser'])->name('admin.users.show');
         Route::get('/{user}/edit', [AdminWebController::class, 'editUser'])->name('admin.users.edit');
         Route::put('/{user}', [AdminWebController::class, 'updateUser'])->name('admin.users.update');

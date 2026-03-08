@@ -19,6 +19,8 @@ class Confession extends Model
         'author_id',
         'recipient_id',
         'content',
+        'media_type',
+        'media_url',
         'type',
         'status',
         'moderated_by',
@@ -92,6 +94,24 @@ class Confession extends Model
     }
 
     /**
+     * Utilisateurs qui ont ajouté cette confession en favoris
+     */
+    public function favoritedBy(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'confession_favorites')
+            ->withTimestamps();
+    }
+
+    /**
+     * Utilisateurs qui ont révélé l'identité de cette confession
+     */
+    public function identityRevealedBy(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'confession_identity_reveals')
+            ->withTimestamps();
+    }
+
+    /**
      * Commentaires de la confession
      */
     public function comments(): HasMany
@@ -152,8 +172,9 @@ class Confession extends Model
 
         return [
             'id' => $this->author->id,
+            'name' => $this->author->first_name,
             'username' => $this->author->username,
-            'full_name' => $this->author->full_name,
+            'initial' => $this->author->initial,
             'avatar_url' => $this->author->avatar_url,
         ];
     }

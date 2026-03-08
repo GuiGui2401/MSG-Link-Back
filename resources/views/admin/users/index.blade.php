@@ -90,22 +90,50 @@
 
 <!-- Users Table -->
 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <!-- Bulk Actions Bar -->
+    <div id="bulk-actions-bar" class="hidden bg-blue-50 border-b border-blue-200 px-6 py-3">
+        <div class="flex items-center justify-between">
+            <span class="text-sm text-gray-700">
+                <span id="selected-count">0</span> utilisateur(s) sélectionné(s)
+            </span>
+            <div class="flex gap-2">
+                <button type="button" onclick="clearSelection()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm">
+                    <i class="fas fa-times mr-2"></i>Annuler
+                </button>
+                <button type="button" onclick="confirmBulkDelete()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm">
+                    <i class="fas fa-trash mr-2"></i>Supprimer la sélection
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="overflow-x-auto">
-        <table class="w-full">
-            <thead class="bg-gray-50 border-b border-gray-200">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Utilisateur</th>
-                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
-                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Rôle</th>
-                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Statut</th>
-                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Inscription</th>
-                    <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-                @forelse($users as $user)
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-6 py-4">
+        <form id="bulk-delete-form" action="{{ route('admin.users.bulk-delete') }}" method="POST">
+            @csrf
+            @method('DELETE')
+            <table class="w-full">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-12">
+                            <input type="checkbox" id="select-all" onchange="toggleAll(this)" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Utilisateur</th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Rôle</th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Statut</th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Inscription</th>
+                        <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    @forelse($users as $user)
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4">
+                                @if(!$user->is_admin)
+                                    <input type="checkbox" name="user_ids[]" value="{{ $user->id }}" onchange="updateSelection()" class="user-checkbox rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                                @endif
+                            </td>
+                            <td class="px-6 py-4">
                             <div class="flex items-center">
                                 <div class="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 font-semibold">
                                     @if($user->avatar_url)
@@ -177,7 +205,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="px-6 py-12 text-center text-gray-500">
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-500">
                             <i class="fas fa-users text-4xl mb-3"></i>
                             <p>Aucun utilisateur trouvé</p>
                         </td>
@@ -185,6 +213,7 @@
                 @endforelse
             </tbody>
         </table>
+        </form>
     </div>
 
     <!-- Pagination -->
@@ -194,4 +223,67 @@
         </div>
     @endif
 </div>
+
+<script>
+    function toggleAll(checkbox) {
+        const checkboxes = document.querySelectorAll('.user-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = checkbox.checked;
+        });
+        updateSelection();
+    }
+
+    function updateSelection() {
+        const checkboxes = document.querySelectorAll('.user-checkbox:checked');
+        const count = checkboxes.length;
+        const bulkActionsBar = document.getElementById('bulk-actions-bar');
+        const selectedCount = document.getElementById('selected-count');
+        const selectAll = document.getElementById('select-all');
+
+        selectedCount.textContent = count;
+
+        if (count > 0) {
+            bulkActionsBar.classList.remove('hidden');
+        } else {
+            bulkActionsBar.classList.add('hidden');
+            selectAll.checked = false;
+        }
+
+        // Update select-all checkbox state
+        const totalCheckboxes = document.querySelectorAll('.user-checkbox').length;
+        selectAll.checked = count === totalCheckboxes && count > 0;
+    }
+
+    function clearSelection() {
+        const checkboxes = document.querySelectorAll('.user-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = false;
+        });
+        document.getElementById('select-all').checked = false;
+        updateSelection();
+    }
+
+    function confirmBulkDelete() {
+        const checkboxes = document.querySelectorAll('.user-checkbox:checked');
+        const count = checkboxes.length;
+
+        if (count === 0) {
+            alert('Veuillez sélectionner au moins un utilisateur à supprimer.');
+            return;
+        }
+
+        if (confirm(`Êtes-vous sûr de vouloir supprimer ${count} utilisateur(s) ? Cette action est irréversible.`)) {
+            document.getElementById('bulk-delete-form').submit();
+        }
+    }
+
+    // Show success/error messages
+    @if(session('success'))
+        alert('{{ session('success') }}');
+    @endif
+
+    @if(session('error'))
+        alert('{{ session('error') }}');
+    @endif
+</script>
 @endsection

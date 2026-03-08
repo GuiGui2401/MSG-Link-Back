@@ -52,12 +52,12 @@ Route::prefix('v1')->group(function () {
 
     // ==================== PUBLIC CONFESSIONS FEED ====================
     Route::get('/confessions', [ConfessionController::class, 'index']);
-    Route::get('/confessions/{confession}', [ConfessionController::class, 'show']);
-    Route::get('/confessions/{confession}/comments', [ConfessionController::class, 'getComments']);
+    Route::get('/confessions/{confession}', [ConfessionController::class, 'show'])->where('confession', '[0-9]+');
+    Route::get('/confessions/{confession}/comments', [ConfessionController::class, 'getComments'])->where('confession', '[0-9]+');
 
     // ==================== PUBLIC GIFTS CATALOG ====================
     Route::get('/gifts', [GiftController::class, 'index']);
-    Route::get('/gifts/{gift}', [GiftController::class, 'show']);
+    Route::get('/gifts/{gift}', [GiftController::class, 'show'])->where('gift', '[0-9]+');
     Route::get('/gift-categories', [GiftController::class, 'getCategories']);
     Route::get('/gift-categories/{categoryId}/gifts', [GiftController::class, 'getGiftsByCategory']);
 
@@ -117,6 +117,8 @@ Route::prefix('v1')->group(function () {
             Route::put('/password', [UserController::class, 'changePassword']);
             Route::post('/avatar', [UserController::class, 'uploadAvatar']);
             Route::delete('/avatar', [UserController::class, 'deleteAvatar']);
+            Route::post('/cover-photo', [UserController::class, 'uploadCoverPhoto']);
+            Route::delete('/cover-photo', [UserController::class, 'deleteCoverPhoto']);
             Route::get('/dashboard', [UserController::class, 'dashboard']);
             Route::get('/stats', [UserController::class, 'getStats']);
             Route::post('/fcm-token', [UserController::class, 'saveFcmToken']);
@@ -157,12 +159,18 @@ Route::prefix('v1')->group(function () {
             Route::get('/received', [ConfessionController::class, 'received']);
             Route::get('/sent', [ConfessionController::class, 'sent']);
             Route::get('/stats', [ConfessionController::class, 'stats']);
+            Route::get('/favorites', [ConfessionController::class, 'favorites']);
             Route::post('/', [ConfessionController::class, 'store']);
+            Route::put('/{confession}', [ConfessionController::class, 'update']);
             Route::post('/{confession}/like', [ConfessionController::class, 'like']);
             Route::delete('/{confession}/like', [ConfessionController::class, 'unlike']);
+            Route::post('/{confession}/favorite', [ConfessionController::class, 'toggleFavorite']);
             Route::post('/{confession}/reveal', [ConfessionController::class, 'reveal']);
+            Route::post('/{confession}/reveal-identity', [ConfessionController::class, 'revealIdentity']);
             Route::post('/{confession}/report', [ConfessionController::class, 'report']);
             Route::post('/{confession}/comments', [ConfessionController::class, 'addComment']);
+            Route::post('/{confession}/comments/{comment}/like', [ConfessionController::class, 'likeComment']);
+            Route::delete('/{confession}/comments/{comment}/like', [ConfessionController::class, 'unlikeComment']);
             Route::delete('/{confession}/comments/{comment}', [ConfessionController::class, 'deleteComment']);
             Route::delete('/{confession}', [ConfessionController::class, 'destroy']);
         });

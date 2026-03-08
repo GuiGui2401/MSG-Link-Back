@@ -54,6 +54,9 @@ class StoryController extends Controller
 
             if ($firstStory->type === 'image') {
                 $preview['media_url'] = $firstStory->media_full_url;
+            } elseif ($firstStory->type === 'video') {
+                $preview['media_url'] = $firstStory->media_full_url;
+                $preview['thumbnail_url'] = $firstStory->thumbnail_full_url;
             } elseif ($firstStory->type === 'text') {
                 $preview['content'] = $firstStory->content;
                 $preview['background_color'] = $firstStory->background_color;
@@ -68,6 +71,7 @@ class StoryController extends Controller
                 ],
                 'real_user_id' => $firstStory->user->id, // Toujours retourner l'ID réel pour pouvoir charger les stories
                 'is_anonymous' => !$shouldRevealIdentity,
+                'is_owner' => $isOwner,
                 'preview' => $preview,
                 'stories_count' => $userStories->count(),
                 'latest_story_at' => $firstStory->created_at->toIso8601String(),
@@ -75,6 +79,20 @@ class StoryController extends Controller
                 'has_new' => !$allViewed,
             ];
         })->filter()->values(); // Filtrer les valeurs null
+
+        // Trier : mes stories en premier, puis non vues, puis vues
+        $storiesByUser = $storiesByUser->sort(function ($a, $b) use ($user) {
+            // Mes stories toujours en premier
+            if ($a['is_owner'] && !$b['is_owner']) return -1;
+            if (!$a['is_owner'] && $b['is_owner']) return 1;
+
+            // Ensuite, stories non vues avant stories vues
+            if ($a['has_new'] && !$b['has_new']) return -1;
+            if (!$a['has_new'] && $b['has_new']) return 1;
+
+            // Sinon, par date de création (plus récent en premier)
+            return strtotime($b['latest_story_at']) - strtotime($a['latest_story_at']);
+        })->values();
 
         return response()->json([
             'stories' => $storiesByUser,
@@ -208,12 +226,26 @@ class StoryController extends Controller
     {
         $user = $request->user();
 
+        // Log la requête pour debugging
+        \Log::info('📸 [STORY] Création de story');
+        \Log::info('Type: ' . $request->input('type'));
+        \Log::info('Has media file: ' . ($request->hasFile('media') ? 'YES' : 'NO'));
+        if ($request->hasFile('media')) {
+            $file = $request->file('media');
+            \Log::info('Media details:', [
+                'original_name' => $file->getClientOriginalName(),
+                'size' => $file->getSize(),
+                'mime_type' => $file->getMimeType(),
+                'error' => $file->getError(),
+            ]);
+        }
+
         $validator = Validator::make($request->all(), [
-            'type' => 'required|in:image,text',
-            'media' => 'required_if:type,image|file|max:2048', // 2MB max (frontend compresse à 1MB)
-            'content' => 'required_if:type,text|string|max:500',
+            'type' => 'required|in:image,text,video',
+            'media' => 'required_if:type,image|required_if:type,video|file|max:102400', // 100MB max pour vidéos
+            'content' => 'required_if:type,text|nullable|string|max:500', // Requis pour texte, optionnel pour légende d'image
             'background_color' => 'nullable|string|max:7', // Format hex: #RRGGBB
-            'duration' => 'nullable|integer|min:3|max:30', // 3 à 30 secondes
+            'duration' => 'nullable|integer|min:3|max:300', // 3 secondes à 5 minutes (300 sec)
         ]);
 
         if ($validator->fails()) {
@@ -232,20 +264,48 @@ class StoryController extends Controller
             'expires_at' => now()->addHours(24), // Expire après 24h
         ];
 
-        // Gestion du média (image uniquement)
-        if ($validated['type'] === 'image' && $request->hasFile('media')) {
+        // Gestion du média (image ou vidéo)
+        if (in_array($validated['type'], ['image', 'video']) && $request->hasFile('media')) {
             $media = $request->file('media');
 
-            // Valider le type MIME
-            if (!in_array($media->getMimeType(), ['image/jpeg', 'image/png', 'image/gif', 'image/webp'])) {
-                return response()->json([
-                    'message' => 'Le fichier doit être une image (JPEG, PNG, GIF, WebP).',
-                ], 422);
+            // Valider le type MIME selon le type
+            if ($validated['type'] === 'image') {
+                if (!in_array($media->getMimeType(), ['image/jpeg', 'image/png', 'image/gif', 'image/webp'])) {
+                    return response()->json([
+                        'message' => 'Le fichier doit être une image (JPEG, PNG, GIF, WebP).',
+                    ], 422);
+                }
+            } elseif ($validated['type'] === 'video') {
+                if (!in_array($media->getMimeType(), ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm'])) {
+                    return response()->json([
+                        'message' => 'Le fichier doit être une vidéo (MP4, MOV, AVI, WebM).',
+                    ], 422);
+                }
             }
 
             // Sauvegarder le média
             $path = $media->store('stories/' . $user->id, 'public');
             $storyData['media_url'] = $path;
+
+            // Gérer le thumbnail pour les vidéos
+            if ($validated['type'] === 'video' && $request->hasFile('thumbnail')) {
+                \Log::info('📸 [STORY] Thumbnail vidéo reçu');
+                $thumbnail = $request->file('thumbnail');
+
+                // Valider que c'est bien une image
+                if (in_array($thumbnail->getMimeType(), ['image/jpeg', 'image/png', 'image/webp'])) {
+                    $thumbnailPath = $thumbnail->store('stories/' . $user->id . '/thumbnails', 'public');
+                    $storyData['thumbnail_url'] = $thumbnailPath;
+                    \Log::info('✅ [STORY] Thumbnail sauvegardé: ' . $thumbnailPath);
+                } else {
+                    \Log::warning('⚠️ [STORY] Format de thumbnail non supporté: ' . $thumbnail->getMimeType());
+                }
+            }
+
+            // Ajouter la légende si présente
+            if (!empty($validated['content'])) {
+                $storyData['content'] = $validated['content'];
+            }
         }
 
         // Gestion du contenu texte
@@ -280,6 +340,8 @@ class StoryController extends Controller
         if ($story->media_url) {
             Storage::disk('public')->delete($story->media_url);
         }
+
+        // Supprimer le thumbnail du stockage
         if ($story->thumbnail_url) {
             Storage::disk('public')->delete($story->thumbnail_url);
         }

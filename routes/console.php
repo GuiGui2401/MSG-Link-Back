@@ -56,3 +56,9 @@ Schedule::command('sanctum:prune-expired --hours=720') // 30 jours
 Schedule::command('notifications:cleanup')
     ->weekly()
     ->withoutOverlapping();
+
+// Nettoyer les stories expirées toutes les heures
+Schedule::command('stories:cleanup')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();

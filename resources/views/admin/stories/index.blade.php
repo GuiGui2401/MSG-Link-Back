@@ -133,11 +133,16 @@
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="flex items-center">
                                 <div class="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-semibold flex-shrink-0">
-                                    {{ strtoupper(substr($story->user->first_name ?? 'U', 0, 1)) }}
+                                    {{ strtoupper(substr($story->user?->first_name ?? 'U', 0, 1)) }}
                                 </div>
                                 <div class="ml-3">
-                                    <p class="text-sm font-medium text-gray-900">{{ $story->user->first_name }} {{ $story->user->last_name }}</p>
-                                    <p class="text-sm text-gray-500">{{ '@' . $story->user->username }}</p>
+                                    @if($story->user)
+                                        <p class="text-sm font-medium text-gray-900">{{ $story->user->first_name }} {{ $story->user->last_name }}</p>
+                                        <p class="text-sm text-gray-500">{{ '@' . $story->user->username }}</p>
+                                    @else
+                                        <p class="text-sm font-medium text-gray-500 italic">Utilisateur supprimé</p>
+                                        <p class="text-sm text-gray-400">@inconnu</p>
+                                    @endif
                                 </div>
                             </div>
                         </td>

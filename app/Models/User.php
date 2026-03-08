@@ -28,6 +28,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'password',
         'original_pin',
         'avatar',
+        'cover_photo',
         'bio',
         'is_verified',
         'is_premium',
@@ -70,7 +71,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'banned_at' => 'datetime',
         'last_seen_at' => 'datetime',
         'settings' => 'array',
-        'wallet_balance' => 'decimal:2',
+        'wallet_balance' => 'float',
     ];
 
     /**
@@ -87,7 +88,7 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function getFullNameAttribute(): string
     {
-        return "{$this->first_name} {$this->last_name}";
+        return trim("{$this->first_name} {$this->last_name}");
     }
 
     /**
@@ -115,6 +116,17 @@ class User extends Authenticatable implements MustVerifyEmail
             return asset('storage/' . $this->avatar);
         }
         return 'https://ui-avatars.com/api/?name=' . urlencode($this->full_name) . '&background=random';
+    }
+
+    /**
+     * URL complète de la cover photo
+     */
+    public function getCoverPhotoUrlAttribute(): ?string
+    {
+        if ($this->cover_photo) {
+            return asset('storage/' . $this->cover_photo);
+        }
+        return null;
     }
 
     /**

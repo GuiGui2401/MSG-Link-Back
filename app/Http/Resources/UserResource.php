@@ -18,6 +18,7 @@ class UserResource extends JsonResource
             'email' => $this->email,
             'phone' => $this->phone,
             'avatar_url' => $this->avatar_url,
+            'cover_photo_url' => $this->cover_photo_url,
             'bio' => $this->bio,
             'profile_url' => $this->profile_url,
             'is_verified' => $this->is_verified,
@@ -30,6 +31,11 @@ class UserResource extends JsonResource
             'phone_verified_at' => $this->phone_verified_at?->toIso8601String(),
             'last_seen_at' => $this->last_seen_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),
+            'updated_at' => $this->updated_at->toIso8601String(),
+
+            // Champs de modération
+            'is_banned' => $this->is_banned ?? false,
+            'banned_reason' => $this->banned_reason,
 
             // Champs Premium
             'is_premium' => $this->is_premium ?? false,
@@ -41,8 +47,6 @@ class UserResource extends JsonResource
 
             // Champs admin uniquement
             $this->mergeWhen($request->user()?->is_admin, [
-                'is_banned' => $this->is_banned,
-                'banned_reason' => $this->banned_reason,
                 'banned_at' => $this->banned_at?->toIso8601String(),
             ]),
         ];

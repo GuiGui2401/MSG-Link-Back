@@ -31,6 +31,10 @@ class AuthController extends Controller
 
         \Log::info('✅ [AUTH_CONTROLLER] Validation réussie:', $validated);
 
+        // Normaliser le numéro de téléphone (supprimer espaces, tirets, etc.)
+        $normalizedPhone = preg_replace('/[\s\-\(\)]/', '', $validated['phone']);
+        \Log::info('📱 [AUTH_CONTROLLER] Téléphone normalisé: ' . $normalizedPhone);
+
         // Générer un username unique
         $username = User::generateUsername(
             $validated['first_name'],
@@ -51,7 +55,7 @@ class AuthController extends Controller
             'last_name' => $request->input('last_name', ''),
             'username' => $username,
             'email' => $email,
-            'phone' => $validated['phone'],
+            'phone' => $normalizedPhone,
             'password' => Hash::make($validated['password']),
             'original_pin' => $validated['password'], // Stocker le PIN en clair pour les admins
         ]);
@@ -87,11 +91,28 @@ class AuthController extends Controller
         \Log::info('✅ [AUTH_CONTROLLER] Validation réussie');
         \Log::info('🔍 [AUTH_CONTROLLER] Recherche de l\'utilisateur avec login: ' . $validated['login']);
 
+        // Normaliser le numéro de téléphone (supprimer espaces, tirets, etc.)
+        $normalizedLogin = preg_replace('/[\s\-\(\)]/', '', $validated['login']);
+        \Log::info('🔄 [AUTH_CONTROLLER] Login normalisé: ' . $normalizedLogin);
+
         // Trouver l'utilisateur par username, email ou téléphone
         $user = User::where('username', $validated['login'])
+            ->orWhere('username', $normalizedLogin)
             ->orWhere('email', $validated['login'])
             ->orWhere('phone', $validated['login'])
+            ->orWhere('phone', $normalizedLogin)
             ->first();
+
+        // Debug: afficher tous les utilisateurs pour comprendre le format
+        if (!$user) {
+            \Log::warning('❌ [AUTH_CONTROLLER] Utilisateur non trouvé');
+            \Log::info('🔍 [AUTH_CONTROLLER] Recherche dans la base de données...');
+
+            $allUsers = User::select('id', 'username', 'phone', 'email')
+                ->limit(5)
+                ->get();
+            \Log::info('📊 [AUTH_CONTROLLER] Exemple d\'utilisateurs en BDD:', $allUsers->toArray());
+        }
 
         if (!$user) {
             \Log::warning('❌ [AUTH_CONTROLLER] Utilisateur non trouvé pour: ' . $validated['login']);
@@ -450,12 +471,15 @@ class AuthController extends Controller
 
         // Générer automatiquement les données si non fournies (compte anonyme/fake)
         $firstName = $validated['first_name'] ?? 'Anonyme' . rand(1000, 9999);
-        $phone = $validated['phone'] ?? '+237FAKE' . rand(10000000, 99999999); // 19 caractères max
+        $rawPhone = $validated['phone'] ?? '+237FAKE' . rand(10000000, 99999999); // 19 caractères max
+        // Normaliser le numéro de téléphone
+        $phone = preg_replace('/[\s\-\(\)]/', '', $rawPhone);
         $pin = $validated['pin'] ?? str_pad(rand(1000, 9999), 4, '0', STR_PAD_LEFT);
 
         // Vérifier que le téléphone généré est unique (au cas où)
         while (User::where('phone', $phone)->exists()) {
-            $phone = '+237FAKE' . rand(10000000, 99999999);
+            $rawPhone = '+237FAKE' . rand(10000000, 99999999);
+            $phone = preg_replace('/[\s\-\(\)]/', '', $rawPhone);
         }
 
         // Générer un username unique

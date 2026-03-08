@@ -11,6 +11,19 @@ class RegisterRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Préparer les données avant validation
+     */
+    protected function prepareForValidation()
+    {
+        // Normaliser le numéro de téléphone (supprimer espaces, tirets, parenthèses)
+        if ($this->has('phone')) {
+            $this->merge([
+                'phone' => preg_replace('/[\s\-\(\)]/', '', $this->phone),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [

@@ -183,6 +183,51 @@ class UserController extends Controller
     }
 
     /**
+     * Upload de cover photo
+     */
+    public function uploadCoverPhoto(Request $request): JsonResponse
+    {
+        $request->validate([
+            'cover_photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:5120', // 5MB max
+        ]);
+
+        $user = $request->user();
+
+        // Supprimer l'ancienne cover photo si existe
+        if ($user->cover_photo) {
+            Storage::disk('public')->delete($user->cover_photo);
+        }
+
+        // Stocker la nouvelle cover photo
+        $path = $request->file('cover_photo')->store('covers', 'public');
+
+        $user->update(['cover_photo' => $path]);
+
+        return response()->json([
+            'message' => 'Photo de couverture mise à jour avec succès.',
+            'cover_photo_url' => $user->fresh()->cover_photo_url,
+        ]);
+    }
+
+    /**
+     * Supprimer la cover photo
+     */
+    public function deleteCoverPhoto(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($user->cover_photo) {
+            Storage::disk('public')->delete($user->cover_photo);
+            $user->update(['cover_photo' => null]);
+        }
+
+        return response()->json([
+            'message' => 'Photo de couverture supprimée.',
+            'cover_photo_url' => null,
+        ]);
+    }
+
+    /**
      * Dashboard utilisateur (statistiques)
      */
     public function dashboard(Request $request): JsonResponse
@@ -366,18 +411,36 @@ class UserController extends Controller
      */
     public function shareLink(Request $request): JsonResponse
     {
-        $user = $request->user();
+        try {
+            $user = $request->user();
 
-        return response()->json([
-            'link' => $user->profile_url,
-            'username' => $user->username,
-            'share_text' => "Écris-moi un message anonyme 👇",
-            'share_options' => [
-                'whatsapp' => "https://wa.me/?text=" . urlencode("Écris-moi un message anonyme 👇 " . $user->profile_url),
-                'facebook' => "https://www.facebook.com/sharer/sharer.php?u=" . urlencode($user->profile_url),
-                'twitter' => "https://twitter.com/intent/tweet?text=" . urlencode("Écris-moi un message anonyme 👇 " . $user->profile_url),
-            ],
-        ]);
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Utilisateur non authentifié',
+                ], 401);
+            }
+
+            return response()->json([
+                'link' => $user->profile_url,
+                'username' => $user->username,
+                'share_text' => "Écris-moi un message anonyme 👇",
+                'share_options' => [
+                    'whatsapp' => "https://wa.me/?text=" . urlencode("Écris-moi un message anonyme 👇 " . $user->profile_url),
+                    'facebook' => "https://www.facebook.com/sharer/sharer.php?u=" . urlencode($user->profile_url),
+                    'twitter' => "https://twitter.com/intent/tweet?text=" . urlencode("Écris-moi un message anonyme 👇 " . $user->profile_url),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('ShareLink error: ' . $e->getMessage(), [
+                'user_id' => $request->user()->id ?? null,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Erreur lors de la récupération du lien de partage',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
+        }
     }
 
     /**

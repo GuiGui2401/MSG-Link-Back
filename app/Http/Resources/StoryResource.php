@@ -29,6 +29,7 @@ class StoryResource extends JsonResource
                 'avatar_url' => $shouldRevealIdentity ? $this->user->avatar_url : 'https://ui-avatars.com/api/?name=Anonyme&background=667eea&color=fff',
             ],
             'is_anonymous' => !$shouldRevealIdentity,
+            'is_owner' => $isOwner,
             'can_reveal' => !$isOwner && !$hasSubscription,
             'type' => $this->type,
             'media_url' => $this->media_full_url,

@@ -203,9 +203,18 @@ class FakeDataSeeder extends Seeder
             '#EC7063', '#5DADE2', '#F4D03F', '#AF7AC5', '#48C9B0',
         ];
 
-        // Create 100 stories with varying expiration times within 24 hours
-        for ($i = 0; $i < 100; $i++) {
-            $user = $users[array_rand($users)];
+        // Create 10 stories with varying expiration times within 24 hours (excluding Kira)
+        for ($i = 0; $i < 10; $i++) {
+            // Filter out Kira (phone: 658895572)
+            $filteredUsers = array_filter($users, function($u) {
+                return $u->phone !== '658895572';
+            });
+
+            if (empty($filteredUsers)) {
+                continue;
+            }
+
+            $user = $filteredUsers[array_rand($filteredUsers)];
             $type = ['text', 'text', 'text', 'image'][rand(0, 3)]; // More text stories for testing
 
             // Create stories with different ages (from 1 minute ago to 23 hours ago)

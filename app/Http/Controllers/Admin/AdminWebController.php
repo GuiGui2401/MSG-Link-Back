@@ -744,10 +744,135 @@ class AdminWebController extends Controller
         }
 
         $username = $user->username;
-        $user->delete();
+
+        try {
+            DB::beginTransaction();
+
+            // Révoquer tous les tokens
+            $user->tokens()->delete();
+
+            // Supprimer les dépendances avec contraintes FK
+            DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+
+            // Supprimer les stories de l'utilisateur
+            Story::where('user_id', $user->id)->forceDelete();
+
+            // Supprimer les messages anonymes
+            AnonymousMessage::where('sender_id', $user->id)
+                ->orWhere('recipient_id', $user->id)
+                ->forceDelete();
+
+            // Supprimer les confessions
+            Confession::where('author_id', $user->id)
+                ->orWhere('recipient_id', $user->id)
+                ->forceDelete();
+
+            // Supprimer les conversations
+            Conversation::where('participant_one_id', $user->id)
+                ->orWhere('participant_two_id', $user->id)
+                ->forceDelete();
+
+            // Supprimer l'utilisateur
+            $user->forceDelete();
+
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
+            DB::commit();
+
+            return redirect()->route('admin.users.index')
+                ->with('success', "L'utilisateur {$username} et toutes ses données ont été supprimés définitivement.");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
+            \Log::error('Erreur suppression utilisateur: ' . $e->getMessage());
+
+            return back()->with('error', 'Erreur lors de la suppression de l\'utilisateur.');
+        }
+    }
+
+    /**
+     * Supprimer plusieurs utilisateurs en une fois
+     */
+    public function bulkDeleteUsers(Request $request)
+    {
+        $request->validate([
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'exists:users,id',
+        ]);
+
+        $currentUserId = auth()->id();
+        $userIds = $request->user_ids;
+        $currentUser = auth()->user();
+
+        // Filtrer les IDs pour retirer:
+        // - L'utilisateur connecté (ne peut pas se supprimer)
+        // - Les admins (ne peuvent pas être supprimés par cette action)
+        $usersToDelete = User::whereIn('id', $userIds)
+            ->where('id', '!=', $currentUserId)
+            ->where(function($query) use ($currentUser) {
+                // Si l'utilisateur n'est pas admin, ne supprimer que les users normaux
+                if (!$currentUser->is_admin) {
+                    $query->where('role', 'user');
+                } else {
+                    // Si admin, ne pas supprimer les autres admins
+                    $query->where('role', '!=', 'admin')
+                          ->where('role', '!=', 'superadmin');
+                }
+            })
+            ->get();
+
+        if ($usersToDelete->isEmpty()) {
+            return back()->with('error', 'Aucun utilisateur valide à supprimer. Vous ne pouvez pas supprimer votre propre compte ou des administrateurs.');
+        }
+
+        $deletedCount = 0;
+        $deletedUsernames = [];
+
+        try {
+            DB::beginTransaction();
+            DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+
+            foreach ($usersToDelete as $user) {
+                // Vérifier les permissions pour chaque utilisateur
+                if ($currentUser->canManage($user)) {
+                    $deletedUsernames[] = $user->username;
+
+                    // Révoquer tous les tokens
+                    $user->tokens()->delete();
+
+                    // Supprimer les dépendances
+                    Story::where('user_id', $user->id)->forceDelete();
+                    AnonymousMessage::where('sender_id', $user->id)->orWhere('recipient_id', $user->id)->forceDelete();
+                    Confession::where('author_id', $user->id)->orWhere('recipient_id', $user->id)->forceDelete();
+                    Conversation::where('participant_one_id', $user->id)->orWhere('participant_two_id', $user->id)->forceDelete();
+
+                    // Supprimer l'utilisateur
+                    $user->forceDelete();
+                    $deletedCount++;
+                }
+            }
+
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+            \Log::error('Erreur suppression multiple utilisateurs: ' . $e->getMessage());
+
+            return back()->with('error', 'Erreur lors de la suppression des utilisateurs.');
+        }
+
+        if ($deletedCount === 0) {
+            return back()->with('error', "Aucun utilisateur n'a pu être supprimé. Vérifiez vos permissions.");
+        }
+
+        $message = $deletedCount === 1
+            ? "L'utilisateur {$deletedUsernames[0]} a été supprimé avec succès."
+            : "{$deletedCount} utilisateurs ont été supprimés avec succès.";
 
         return redirect()->route('admin.users.index')
-            ->with('success', "L'utilisateur {$username} a été supprimé.");
+            ->with('success', $message);
     }
 
     // ==================== MODERATION ====================
