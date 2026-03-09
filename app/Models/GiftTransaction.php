@@ -17,6 +17,7 @@ class GiftTransaction extends Model
         'sender_id',
         'recipient_id',
         'conversation_id',
+        'anonymous_message_id',
         'amount',
         'platform_fee',
         'net_amount',
@@ -78,6 +79,14 @@ class GiftTransaction extends Model
     public function conversation(): BelongsTo
     {
         return $this->belongsTo(Conversation::class);
+    }
+
+    /**
+     * Message anonyme associé
+     */
+    public function anonymousMessage(): BelongsTo
+    {
+        return $this->belongsTo(AnonymousMessage::class, 'anonymous_message_id');
     }
 
     /**

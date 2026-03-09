@@ -18,6 +18,9 @@ class AnonymousMessage extends Model
         'recipient_id',
         'content',
         'reply_to_message_id',
+        'media_type',
+        'media_url',
+        'voice_type',
         'is_read',
         'read_at',
         'is_identity_revealed',
@@ -77,6 +80,14 @@ class AnonymousMessage extends Model
     public function replies()
     {
         return $this->hasMany(AnonymousMessage::class, 'reply_to_message_id');
+    }
+
+    /**
+     * Cadeaux envoyés avec ce message
+     */
+    public function giftTransactions()
+    {
+        return $this->hasMany(GiftTransaction::class, 'anonymous_message_id');
     }
 
     // ==================== ACCESSORS ====================

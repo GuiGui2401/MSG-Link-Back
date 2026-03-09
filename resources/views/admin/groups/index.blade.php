@@ -157,10 +157,10 @@
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="flex items-center">
                                 <div class="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-semibold flex-shrink-0">
-                                    {{ strtoupper(substr($group->creator->first_name ?? 'U', 0, 1)) }}
+                                    {{ strtoupper(substr($group->creator?->first_name ?? 'U', 0, 1)) }}
                                 </div>
                                 <div class="ml-3">
-                                    <p class="text-sm font-medium text-gray-900">{{ '@' . $group->creator->username }}</p>
+                                    <p class="text-sm font-medium text-gray-900">{{ '@' . ($group->creator?->username ?? 'unknown') }}</p>
                                 </div>
                             </div>
                         </td>

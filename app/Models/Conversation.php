@@ -16,6 +16,7 @@ class Conversation extends Model
     protected $fillable = [
         'participant_one_id',
         'participant_two_id',
+        'pinned_anonymous_message_id',
         'last_message_at',
         'streak_count',
         'streak_updated_at',
@@ -94,6 +95,14 @@ class Conversation extends Model
     public function identityReveals(): HasMany
     {
         return $this->hasMany(ConversationIdentityReveal::class);
+    }
+
+    /**
+     * Message anonyme épinglé (contexte de la conversation)
+     */
+    public function pinnedAnonymousMessage(): BelongsTo
+    {
+        return $this->belongsTo(AnonymousMessage::class, 'pinned_anonymous_message_id');
     }
 
     // ==================== ACCESSORS ====================

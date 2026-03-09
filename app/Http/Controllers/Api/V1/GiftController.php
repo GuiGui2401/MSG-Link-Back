@@ -35,6 +35,7 @@ class GiftController extends Controller
     {
         $gifts = Gift::active()
             ->ordered()
+            ->with('category') // Charger la relation category
             ->get();
 
         return response()->json([
