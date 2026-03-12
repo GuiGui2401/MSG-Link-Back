@@ -290,14 +290,17 @@ class ServiceConfigController extends Controller
             ], 400);
         }
 
-        // Note: You'll need to implement FreeMoPayService if you want to use this
-        // $freemopayService = new \App\Services\Payment\FreeMoPayService();
-        // $result = $freemopayService->testConnection();
+        try {
+            $freemopayService = new \App\Services\Payment\FreemopayService();
+            $result = $freemopayService->testConnection();
 
-        return response()->json([
-            'success' => false,
-            'message' => 'FreeMoPay service not yet implemented'
-        ], 501);
+            return response()->json($result, $result['success'] ? 200 : 400);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du test: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

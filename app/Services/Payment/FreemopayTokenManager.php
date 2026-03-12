@@ -3,6 +3,7 @@
 namespace App\Services\Payment;
 
 use App\Models\Setting;
+use App\Models\ServiceConfiguration;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -22,12 +23,24 @@ class FreemopayTokenManager
      */
     protected function loadConfig(): array
     {
+        $config = ServiceConfiguration::getFreeMoPayConfig();
+
+        if (!$config) {
+            return [
+                'base_url' => 'https://api-v2.freemopay.com',
+                'app_key' => null,
+                'secret_key' => null,
+                'token_timeout' => 30,
+                'token_cache_duration' => 3000,
+            ];
+        }
+
         return [
-            'base_url' => Setting::get('freemopay_base_url', 'https://api-v2.freemopay.com'),
-            'app_key' => Setting::get('freemopay_app_key'),
-            'secret_key' => Setting::get('freemopay_secret_key'),
-            'token_timeout' => Setting::get('freemopay_token_timeout', 30),
-            'token_cache_duration' => Setting::get('freemopay_token_cache_duration', 3000),
+            'base_url' => $config->freemopay_base_url ?? 'https://api-v2.freemopay.com',
+            'app_key' => $config->freemopay_app_key,
+            'secret_key' => $config->freemopay_secret_key,
+            'token_timeout' => $config->freemopay_token_timeout ?? 30,
+            'token_cache_duration' => $config->freemopay_token_cache_duration ?? 3000,
         ];
     }
 

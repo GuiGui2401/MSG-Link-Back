@@ -3,6 +3,7 @@
 namespace App\Services\Payment;
 
 use App\Models\Setting;
+use App\Models\ServiceConfiguration;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
@@ -23,6 +24,15 @@ class FreemopayService
         $this->config = $this->loadConfig();
         $this->client = new FreemopayClient();
         $this->tokenManager = new FreemopayTokenManager($this->client);
+
+        // Debug: Log configuration status
+        Log::debug('FreemopayService configuration loaded', [
+            'has_app_key' => !empty($this->config['app_key']),
+            'has_secret_key' => !empty($this->config['secret_key']),
+            'active_value' => $this->config['active'],
+            'active_type' => gettype($this->config['active']),
+            'is_configured' => $this->isConfigured(),
+        ]);
     }
 
     /**
@@ -30,14 +40,28 @@ class FreemopayService
      */
     protected function loadConfig(): array
     {
+        $config = ServiceConfiguration::getFreeMoPayConfig();
+
+        if (!$config) {
+            return [
+                'base_url' => 'https://api-v2.freemopay.com',
+                'app_key' => null,
+                'secret_key' => null,
+                'callback_url' => null,
+                'init_payment_timeout' => 60,
+                'status_check_timeout' => 30,
+                'active' => false,
+            ];
+        }
+
         return [
-            'base_url' => Setting::get('freemopay_base_url', 'https://api-v2.freemopay.com'),
-            'app_key' => Setting::get('freemopay_app_key'),
-            'secret_key' => Setting::get('freemopay_secret_key'),
-            'callback_url' => Setting::get('freemopay_callback_url'),
-            'init_payment_timeout' => Setting::get('freemopay_init_payment_timeout', 60),
-            'status_check_timeout' => Setting::get('freemopay_status_check_timeout', 30),
-            'active' => Setting::get('freemopay_active', false),
+            'base_url' => $config->freemopay_base_url ?? 'https://api-v2.freemopay.com',
+            'app_key' => $config->freemopay_app_key,
+            'secret_key' => $config->freemopay_secret_key,
+            'callback_url' => $config->freemopay_callback_url,
+            'init_payment_timeout' => $config->freemopay_init_payment_timeout ?? 60,
+            'status_check_timeout' => $config->freemopay_status_check_timeout ?? 30,
+            'active' => $config->is_active ?? false,
         ];
     }
 
@@ -119,15 +143,12 @@ class FreemopayService
 
             Log::info("Payment initiated successfully");
             Log::info("Reference: {$reference}");
+            Log::info("=== USSD push sent to user's phone ===");
+            Log::info("Transaction ID: {$transaction->id}");
+            Log::info("Status: pending (waiting for user to validate USSD)");
 
-            $finalTransaction = $this->waitForPaymentCompletion($transaction, $reference);
-
-            Log::info("=== Payment completed successfully ===");
-            Log::info("Transaction ID: {$finalTransaction->id}");
-            Log::info("Final status: {$finalTransaction->status}");
-            Log::info("Amount: {$finalTransaction->amount} XAF");
-
-            return $finalTransaction;
+            // Retourner immédiatement - le frontend fera du polling
+            return $transaction->fresh();
 
         } catch (\Exception $e) {
             Log::error("=== Payment failed ===");
@@ -460,7 +481,113 @@ class FreemopayService
     {
         return !empty($this->config['app_key']) &&
                !empty($this->config['secret_key']) &&
-               $this->config['active'] === true;
+               (bool) $this->config['active']; // Cast to boolean pour accepter 1, "1", true
+    }
+
+    /**
+     * Initialize a withdrawal (cashout) with FreeMoPay
+     */
+    public function initWithdrawal(
+        string $receiverPhone,
+        float $amount,
+        string $externalId
+    ): array {
+        if (!$this->isConfigured()) {
+            throw new \Exception('Freemopay service is not configured properly');
+        }
+
+        Log::info("=== Freemopay: Initiating withdrawal ===");
+        Log::info("Amount: {$amount} XAF");
+        Log::info("Receiver Phone: {$receiverPhone}");
+        Log::info("External ID: {$externalId}");
+
+        $normalizedPhone = $this->normalizePhoneNumber($receiverPhone);
+        Log::info("Phone normalized: {$normalizedPhone}");
+
+        $callbackUrl = $this->config['callback_url'] ?? config('app.url') . '/api/webhooks/freemopay';
+        Log::info("Callback URL: {$callbackUrl}");
+
+        try {
+            Log::info("=== Calling FreeMoPay Withdrawal API ===");
+
+            $freemoResponse = $this->callFreemopayWithdrawalAPI(
+                $normalizedPhone,
+                $amount,
+                $externalId,
+                $callbackUrl
+            );
+
+            $reference = $freemoResponse['reference'] ?? null;
+
+            if (!$reference) {
+                Log::error("No reference in Freemopay withdrawal response");
+                Log::error("Response: " . json_encode($freemoResponse));
+                throw new \Exception('No reference in Freemopay withdrawal response');
+            }
+
+            Log::info("Withdrawal initiated successfully");
+            Log::info("Reference: {$reference}");
+
+            return [
+                'success' => true,
+                'reference' => $reference,
+                'status' => $freemoResponse['status'] ?? 'CREATED',
+                'message' => $freemoResponse['message'] ?? 'Withdrawal initiated',
+            ];
+
+        } catch (\Exception $e) {
+            Log::error("=== Withdrawal failed ===");
+            Log::error("Error: {$e->getMessage()}");
+            throw $e;
+        }
+    }
+
+    /**
+     * Call FreeMoPay API to initialize withdrawal
+     */
+    protected function callFreemopayWithdrawalAPI(
+        string $receiver,
+        float $amount,
+        string $externalId,
+        string $callback
+    ): array {
+        $bearerToken = $this->tokenManager->getToken();
+
+        $payload = [
+            'receiver' => $receiver,
+            'amount' => $amount,
+            'externalId' => $externalId,
+            'callback' => $callback
+        ];
+
+        $baseUrl = rtrim($this->config['base_url'], '/');
+        $endpoint = "{$baseUrl}/api/v2/payment/direct-withdraw";
+
+        Log::info("[Freemopay Service] Calling Freemopay Withdrawal API v2");
+        Log::info("[Freemopay Service] URL: {$endpoint}");
+        Log::info("[Freemopay Service] Payload: " . json_encode($payload));
+
+        $response = $this->client->post(
+            $endpoint,
+            $payload,
+            $bearerToken,
+            false,
+            $this->config['init_payment_timeout']
+        );
+
+        Log::info("[Freemopay Service] Freemopay withdrawal response: " . json_encode($response));
+
+        $initStatus = strtoupper($response['status'] ?? '');
+        $validInitStatuses = ['SUCCESS', 'CREATED', 'PENDING', 'PROCESSING'];
+        $failedStatuses = ['FAILED', 'FAILURE', 'ERROR', 'REJECTED', 'CANCELLED', 'CANCELED'];
+
+        if (in_array($initStatus, $failedStatuses)) {
+            $errorMessage = $response['message'] ?? 'Unknown error';
+            Log::error("[Freemopay Service] Withdrawal init failed - Status: {$initStatus}, Message: {$errorMessage}");
+            throw new \Exception("Withdrawal initialization failed: {$errorMessage}");
+        }
+
+        return $response;
     }
 
     /**

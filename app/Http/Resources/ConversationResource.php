@@ -66,12 +66,32 @@ class ConversationResource extends JsonResource
 
             // Dernier message
             'last_message' => $this->when($this->relationLoaded('lastMessage'), function () {
+                $giftData = null;
+                if ($this->lastMessage?->type === 'gift' && $this->lastMessage?->relationLoaded('giftTransaction')) {
+                    $gift = $this->lastMessage?->giftTransaction?->gift;
+                    $giftData = [
+                        'id' => $gift?->id,
+                        'name' => $gift?->name,
+                        'icon' => $gift?->icon,
+                        'animation' => $gift?->animation,
+                        'price' => $gift?->price,
+                        'formatted_price' => $gift?->formatted_price,
+                        'tier' => $gift?->tier,
+                        'tier_color' => $gift?->tier_color,
+                        'background_color' => $gift?->background_color,
+                        'description' => $gift?->description,
+                        'amount' => $this->lastMessage?->giftTransaction?->amount,
+                        'is_anonymous' => $this->lastMessage?->giftTransaction?->is_anonymous ?? false,
+                    ];
+                }
+
                 return [
                     'id' => $this->lastMessage?->id,
                     'content' => $this->lastMessage?->content_preview,
                     'type' => $this->lastMessage?->type,
                     'is_mine' => $this->lastMessage?->sender_id === request()->user()?->id,
                     'created_at' => $this->lastMessage?->created_at?->toIso8601String(),
+                    'gift_data' => $giftData,
                 ];
             }),
 

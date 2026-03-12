@@ -170,17 +170,23 @@
                         Catégories Cadeaux
                     </a>
 
-                    <a href="{{ route('admin.gift-management.index') }}"
-                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.gift-management.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
-                        <i class="fas fa-gifts w-5 mr-3"></i>
-                        Gestion Cadeaux
-                    </a>
+	                    <a href="{{ route('admin.gift-management.index') }}"
+	                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.gift-management.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+	                        <i class="fas fa-gifts w-5 mr-3"></i>
+	                        Gestion Cadeaux
+	                    </a>
 
-                    <a href="{{ route('admin.payments.index') }}"
-                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.payments.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
-                        <i class="fas fa-credit-card w-5 mr-3"></i>
-                        Paiements
-                    </a>
+	                    <a href="{{ route('admin.sponsorship-packages.index') }}"
+	                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.sponsorship-packages.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+	                        <i class="fas fa-bullhorn w-5 mr-3"></i>
+	                        Packages Sponsoring
+	                    </a>
+
+	                    <a href="{{ route('admin.payments.index') }}"
+	                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.payments.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+	                        <i class="fas fa-credit-card w-5 mr-3"></i>
+	                        Paiements
+	                    </a>
 
                     <a href="{{ route('admin.analytics') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.analytics') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
@@ -231,11 +237,12 @@
                         Pages Légales
                     </a>
 
-                    <a href="{{ route('admin.payment-config.index') }}"
+                    {{-- Config Paiements désactivée - Utiliser "Services API" à la place --}}
+                    {{-- <a href="{{ route('admin.payment-config.index') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.payment-config.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
                         <i class="fas fa-money-check-alt w-5 mr-3"></i>
                         Config Paiements
-                    </a>
+                    </a> --}}
 
                     <a href="{{ route('admin.maintenance.index') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.maintenance.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">

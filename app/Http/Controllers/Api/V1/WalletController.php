@@ -8,15 +8,19 @@ use App\Http\Resources\WalletTransactionResource;
 use App\Http\Resources\WithdrawalResource;
 use App\Models\Withdrawal;
 use App\Models\WalletTransaction;
-use App\Services\Payment\DepositService;
+use App\Services\Payment\FreemopayService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class WalletController extends Controller
 {
-    public function __construct(
-        private DepositService $depositService
-    ) {}
+    private FreemopayService $freemopayService;
+
+    public function __construct()
+    {
+        $this->freemopayService = new FreemopayService();
+    }
 
     /**
      * Obtenir le solde et les informations du wallet
@@ -55,14 +59,15 @@ class WalletController extends Controller
                 return [
                     'id' => 'wt_' . $t->id,
                     'type' => $t->type,
-                    'amount' => $t->amount,
+                    'amount' => (float) $t->amount,
                     'description' => $t->description,
                     'status' => 'completed', // Les wallet_transactions sont toujours completed
                     'created_at' => $t->created_at,
                     'reference' => $t->reference,
                     'meta' => null,
                 ];
-            });
+            })
+            ->toArray();
 
         // 2. Récupérer les transactions (withdrawals, deposits via CinetPay)
         $regularTransactions = \App\Models\Transaction::where('user_id', $user->id)
@@ -72,25 +77,42 @@ class WalletController extends Controller
                 return [
                     'id' => 't_' . $t->id,
                     'type' => $t->type,
-                    'amount' => $t->amount,
+                    'amount' => (float) $t->amount,
                     'description' => $t->description,
                     'status' => $t->status,
                     'created_at' => $t->created_at,
                     'reference' => null,
-                    'meta' => $t->meta,
+                    'meta' => $t->meta ? json_decode($t->meta, true) : null,
                 ];
-            });
+            })
+            ->toArray();
 
         // 3. Fusionner et trier par date
-        $allTransactions = $walletTransactions->merge($regularTransactions)
+        $allTransactions = collect(array_merge($walletTransactions, $regularTransactions))
             ->sortByDesc('created_at')
             ->values();
 
         // 4. Filtres optionnels
         if ($request->has('type')) {
-            $allTransactions = $allTransactions->filter(function($t) use ($request) {
-                return $t['type'] === $request->type;
-            })->values();
+            $type = (string) $request->type;
+
+            // Mobile UI uses "deposit"/"withdrawal" filters, but our merged history can contain:
+            // - wallet_transactions: credit/debit
+            // - transactions: deposit/withdrawal (and others)
+            // So we support grouping for a consistent UX.
+            $depositTypes = ['credit', 'deposit'];
+            $withdrawalTypes = ['debit', 'withdrawal'];
+
+            if ($type === 'deposit') {
+                $allTransactions = $allTransactions->filter(fn($t) => in_array($t['type'], $depositTypes, true))
+                    ->values();
+            } elseif ($type === 'withdrawal') {
+                $allTransactions = $allTransactions->filter(fn($t) => in_array($t['type'], $withdrawalTypes, true))
+                    ->values();
+            } else {
+                $allTransactions = $allTransactions->filter(fn($t) => $t['type'] === $type)
+                    ->values();
+            }
         }
 
         if ($request->has('from')) {
@@ -125,7 +147,7 @@ class WalletController extends Controller
     }
 
     /**
-     * Demander un retrait
+     * Demander un retrait via FreeMoPay
      */
     public function withdraw(WithdrawalRequest $request): JsonResponse
     {
@@ -142,10 +164,11 @@ class WalletController extends Controller
             ], 422);
         }
 
-        // Vérifier le montant minimum
-        if ($amount < Withdrawal::MIN_WITHDRAWAL_AMOUNT) {
+        // Vérifier le montant minimum (depuis les settings)
+        $minimumAmount = Withdrawal::getMinimumAmount();
+        if ($amount < $minimumAmount) {
             return response()->json([
-                'message' => "Le montant minimum de retrait est de " . number_format(Withdrawal::MIN_WITHDRAWAL_AMOUNT) . " FCFA.",
+                'message' => "Le montant minimum de retrait est de " . number_format($minimumAmount) . " FCFA.",
             ], 422);
         }
 
@@ -161,21 +184,85 @@ class WalletController extends Controller
         // Calculer les montants
         $amounts = Withdrawal::calculateAmounts($amount);
 
-        // Créer la demande de retrait
-        $withdrawal = Withdrawal::create([
+        // Générer un ID externe unique
+        $externalId = $this->generateWithdrawalExternalId();
+
+        Log::info('💸 [WALLET] Initiating withdrawal via FreeMoPay', [
             'user_id' => $user->id,
-            'amount' => $amounts['amount'],
-            'fee' => $amounts['fee'],
-            'net_amount' => $amounts['net_amount'],
-            'phone_number' => $validated['phone_number'],
-            'provider' => $validated['provider'],
-            'status' => Withdrawal::STATUS_PENDING,
+            'amount' => $amount,
+            'phone' => $validated['phone_number'],
+            'external_id' => $externalId,
         ]);
 
-        return response()->json([
-            'message' => 'Demande de retrait créée avec succès.',
-            'withdrawal' => new WithdrawalResource($withdrawal),
-        ], 201);
+        try {
+            // Appeler l'API FreeMoPay pour initier le retrait
+            $freemopayResult = $this->freemopayService->initWithdrawal(
+                $validated['phone_number'],
+                $amount,
+                $externalId
+            );
+
+            $reference = $freemopayResult['reference'];
+
+            Log::info('✅ [WALLET] FreeMoPay withdrawal initiated', [
+                'external_id' => $externalId,
+                'reference' => $reference,
+                'status' => $freemopayResult['status'],
+            ]);
+
+            // Créer la demande de retrait avec la référence FreeMoPay
+            $withdrawal = Withdrawal::create([
+                'user_id' => $user->id,
+                'amount' => $amounts['amount'],
+                'fee' => $amounts['fee'],
+                'net_amount' => $amounts['net_amount'],
+                'phone_number' => $validated['phone_number'],
+                'provider' => $validated['provider'],
+                'status' => Withdrawal::STATUS_PENDING,
+                'transaction_reference' => $reference, // Référence FreeMoPay
+                'notes' => "External ID: {$externalId}",
+            ]);
+
+            Log::info('✅ [WALLET] Withdrawal record created', [
+                'withdrawal_id' => $withdrawal->id,
+                'reference' => $reference,
+            ]);
+
+            $freshUser = $user->fresh();
+
+            return response()->json([
+                'message' => 'Demande de retrait créée avec succès. Le traitement peut prendre quelques minutes.',
+                'withdrawal' => new WithdrawalResource($withdrawal),
+                // Keep mobile clients in sync (some expect `wallet.balance` in the response)
+                'wallet' => [
+                    'balance' => (int) round($freshUser->wallet_balance),
+                    'formatted_balance' => $freshUser->formatted_balance,
+                    'currency' => 'XAF',
+                ],
+                // Backward-compat: some clients look for this key.
+                'current_balance' => (int) round($freshUser->wallet_balance),
+            ], 201);
+
+        } catch (\Exception $e) {
+            Log::error('❌ [WALLET] Error initiating withdrawal', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Erreur lors de l\'initiation du retrait: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * Générer un ID externe unique pour le withdrawal
+     */
+    private function generateWithdrawalExternalId(): string
+    {
+        $timestamp = now()->format('YmdHis');
+        $random = substr(uniqid(), -4);
+        return "WDR-{$timestamp}-{$random}";
     }
 
     /**
@@ -190,13 +277,21 @@ class WalletController extends Controller
 
         // Filtre par statut
         if ($request->has('status')) {
-            $query->where('status', $request->status);
+            // Mobile expects `status=pending` to include both pending + processing.
+            if ($request->status === Withdrawal::STATUS_PENDING) {
+                $query->pending();
+            } else {
+                $query->where('status', $request->status);
+            }
         }
 
         $withdrawals = $query->paginate($request->get('per_page', 20));
 
         return response()->json([
-            'withdrawals' => WithdrawalResource::collection($withdrawals),
+            // Return a flat array for mobile clients (avoid ResourceCollection wrapping under `data`),
+            // while still letting JsonResource filter out MissingValue keys produced by `when()`.
+            'withdrawals' => WithdrawalResource::collection($withdrawals->getCollection())
+                ->resolve($request),
             'meta' => [
                 'current_page' => $withdrawals->currentPage(),
                 'last_page' => $withdrawals->lastPage(),
@@ -310,45 +405,233 @@ class WalletController extends Controller
                     'is_available' => true,
                 ],
             ],
-            'minimum_amount' => Withdrawal::MIN_WITHDRAWAL_AMOUNT,
+            'minimum_amount' => Withdrawal::getMinimumAmount(),
             'fee' => Withdrawal::WITHDRAWAL_FEE,
             'currency' => 'XAF',
         ]);
     }
 
     /**
-     * Initier un dépôt sur le wallet
+     * Initier un dépôt sur le wallet via FreeMoPay
      */
     public function initiateDeposit(Request $request): JsonResponse
     {
         $request->validate([
             'amount' => 'required|numeric|min:100',
-            'phone_number' => 'nullable|string',
+            'phone_number' => 'required|string',
         ]);
 
         $user = $request->user();
         $amount = (float) $request->amount;
         $phoneNumber = $request->phone_number;
 
-        $result = $this->depositService->initiateDeposit($user, $amount, $phoneNumber);
+        Log::info('💰 [WALLET] Initiation dépôt FreeMoPay', [
+            'user_id' => $user->id,
+            'amount' => $amount,
+            'phone' => $phoneNumber,
+        ]);
 
-        if (!$result['success']) {
+        try {
+            $transaction = $this->freemopayService->initPayment(
+                $user,
+                $amount,
+                $phoneNumber,
+                'Dépôt de fonds wallet Weylo'
+            );
+
+            Log::info('✅ [WALLET] Dépôt FreeMoPay initié', [
+                'transaction_id' => $transaction->id,
+                'status' => $transaction->status,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'USSD envoyé sur votre téléphone. Veuillez composer le code et confirmer le paiement.',
+                'data' => [
+                    'provider' => 'freemopay',
+                    'transaction_id' => $transaction->id,
+                    'status' => $transaction->status,
+                    'amount' => $transaction->amount,
+                ],
+            ], 201);
+
+        } catch (\Exception $e) {
+            Log::error('❌ [WALLET] Erreur dépôt FreeMoPay', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => $result['message'] ?? 'Erreur lors de l\'initiation du dépôt',
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * Vérifier le statut d'un dépôt FreeMoPay
+     */
+    public function checkDepositStatus(Request $request): JsonResponse
+    {
+        $request->validate([
+            'transaction_id' => 'required|integer|exists:transactions,id',
+        ]);
+
+        $user = $request->user();
+        $transaction = \App\Models\Transaction::find($request->transaction_id);
+
+        if (!$transaction || $transaction->user_id !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Transaction non trouvée',
+            ], 404);
+        }
+
+        if ($transaction->type !== 'deposit') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cette transaction n\'est pas un dépôt',
             ], 422);
         }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Dépôt initié avec succès',
-            'data' => [
-                'provider' => $result['provider'],
-                'payment_url' => $result['payment_url'] ?? null,
-                'payment_token' => $result['payment_token'] ?? null,
-                'reference' => $result['reference'],
-                'payment_id' => $result['payment_id'],
-            ],
-        ], 201);
+        Log::info('🔍 [WALLET] Vérification statut dépôt', [
+            'transaction_id' => $transaction->id,
+            'current_status' => $transaction->status,
+        ]);
+
+        $meta = json_decode($transaction->meta, true);
+        $reference = $meta['provider_reference'] ?? null;
+
+        // Si déjà complété ou échoué, retourner directement
+        if (in_array($transaction->status, ['completed', 'failed', 'cancelled'])) {
+            return response()->json([
+                'success' => true,
+                'status' => $transaction->status,
+                'amount' => $transaction->amount,
+                'created_at' => $transaction->created_at,
+                'completed_at' => $transaction->completed_at,
+            ]);
+        }
+
+        // Si pas de référence, retourner pending
+        if (!$reference) {
+            return response()->json([
+                'success' => true,
+                'status' => 'pending',
+                'message' => 'En attente d\'initialisation',
+                'amount' => $transaction->amount,
+                'created_at' => $transaction->created_at,
+            ]);
+        }
+
+        // Vérifier avec l'API FreeMoPay
+        try {
+            $statusResponse = $this->freemopayService->checkPaymentStatus($reference);
+            $freemopayStatus = strtoupper($statusResponse['status'] ?? 'UNKNOWN');
+            $message = $statusResponse['message'] ?? '';
+
+            Log::info('📊 [WALLET] Statut FreeMoPay reçu', [
+                'transaction_id' => $transaction->id,
+                'freemopay_status' => $freemopayStatus,
+            ]);
+
+            $successStatuses = ['SUCCESS', 'SUCCESSFUL', 'COMPLETED'];
+            $failedStatuses = ['FAILED', 'FAILURE', 'ERROR', 'REJECTED', 'CANCELLED', 'CANCELED'];
+
+            // Mettre à jour si statut changé
+            if (in_array($freemopayStatus, $successStatuses) && $transaction->status !== 'completed') {
+                $transaction->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                    'meta' => json_encode(array_merge($meta, [
+                        'status_response' => $statusResponse,
+                        'verified_at' => now()->toISOString(),
+                    ])),
+                ]);
+
+                // Créditer le wallet
+                $this->processDeposit($transaction);
+
+                Log::info('✅ [WALLET] Dépôt complété', [
+                    'transaction_id' => $transaction->id,
+                    'amount' => $transaction->amount,
+                ]);
+
+            } elseif (in_array($freemopayStatus, $failedStatuses) && $transaction->status !== 'failed') {
+                $transaction->update([
+                    'status' => 'failed',
+                    'meta' => json_encode(array_merge($meta, [
+                        'failure_reason' => $message,
+                        'status_response' => $statusResponse,
+                    ])),
+                ]);
+
+                Log::error('❌ [WALLET] Dépôt échoué', [
+                    'transaction_id' => $transaction->id,
+                    'reason' => $message,
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'status' => $transaction->fresh()->status,
+                'freemopay_status' => $freemopayStatus,
+                'message' => $message,
+                'amount' => $transaction->amount,
+                'created_at' => $transaction->created_at,
+                'completed_at' => $transaction->completed_at,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::warning('⚠️ [WALLET] Erreur vérification statut', [
+                'transaction_id' => $transaction->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Retourner le statut actuel sans erreur
+            return response()->json([
+                'success' => true,
+                'status' => $transaction->status,
+                'message' => 'En cours de traitement',
+                'amount' => $transaction->amount,
+                'created_at' => $transaction->created_at,
+            ]);
+        }
+    }
+
+    /**
+     * Traiter un dépôt et créditer le wallet
+     */
+    private function processDeposit(\App\Models\Transaction $transaction): void
+    {
+        if ($transaction->type !== 'deposit') {
+            return;
+        }
+
+        $user = $transaction->user;
+        $balanceBefore = $user->wallet_balance;
+
+        $user->increment('wallet_balance', $transaction->amount);
+
+        $balanceAfter = $user->fresh()->wallet_balance;
+
+        WalletTransaction::create([
+            'user_id' => $user->id,
+            'type' => WalletTransaction::TYPE_CREDIT,
+            'amount' => $transaction->amount,
+            'balance_before' => $balanceBefore,
+            'balance_after' => $balanceAfter,
+            'description' => 'Dépôt via FreeMoPay',
+            'reference' => json_decode($transaction->meta, true)['external_id'] ?? null,
+            'transactionable_type' => \App\Models\Transaction::class,
+            'transactionable_id' => $transaction->id,
+        ]);
+
+        Log::info('💰 [WALLET] Solde crédité', [
+            'user_id' => $user->id,
+            'amount' => $transaction->amount,
+            'balance_before' => $balanceBefore,
+            'balance_after' => $balanceAfter,
+        ]);
     }
 }

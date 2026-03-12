@@ -39,9 +39,17 @@ class Withdrawal extends Model
     const WITHDRAWAL_FEE = 0; // Pas de frais pour l'instant
 
     /**
-     * Montant minimum de retrait
+     * Montant minimum de retrait (par défaut, peut être surchargé par les settings)
      */
     const MIN_WITHDRAWAL_AMOUNT = 1000;
+
+    /**
+     * Obtenir le montant minimum de retrait depuis les settings
+     */
+    public static function getMinimumAmount(): int
+    {
+        return (int) Setting::get('wallet_min_withdrawal', self::MIN_WITHDRAWAL_AMOUNT);
+    }
 
     /**
      * Providers Mobile Money

@@ -225,6 +225,18 @@ Route::prefix('admin')->middleware('auth')->group(function () {
             'destroy' => 'admin.gift-management.destroy',
         ]);
 
+    // Sponsorship Packages (configuration)
+    Route::resource('sponsorship-packages', \App\Http\Controllers\Admin\SponsorshipPackageController::class)
+        ->parameters(['sponsorship-packages' => 'package'])
+        ->names([
+            'index' => 'admin.sponsorship-packages.index',
+            'create' => 'admin.sponsorship-packages.create',
+            'store' => 'admin.sponsorship-packages.store',
+            'edit' => 'admin.sponsorship-packages.edit',
+            'update' => 'admin.sponsorship-packages.update',
+            'destroy' => 'admin.sponsorship-packages.destroy',
+        ]);
+
     // Withdrawals
     Route::prefix('withdrawals')->group(function () {
         Route::get('/', [AdminWebController::class, 'withdrawals'])->name('admin.withdrawals.index');

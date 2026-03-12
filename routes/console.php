@@ -62,3 +62,28 @@ Schedule::command('stories:cleanup')
     ->hourly()
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| Wallet & Payment Tasks
+|--------------------------------------------------------------------------
+*/
+
+use App\Jobs\Wallet\CheckPendingDepositsJob;
+use App\Jobs\Wallet\CheckPendingWithdrawalsJob;
+use App\Jobs\Wallet\CleanupStaleTransactionsJob;
+
+// Vérifier les dépôts pending toutes les 30 secondes
+Schedule::job(new CheckPendingDepositsJob)
+    ->everyThirtySeconds()
+    ->withoutOverlapping();
+
+// Vérifier les retraits pending toutes les minutes
+Schedule::job(new CheckPendingWithdrawalsJob)
+    ->everyMinute()
+    ->withoutOverlapping();
+
+// Nettoyer les transactions obsolètes (> 24h pending) tous les jours à 3h du matin
+Schedule::job(new CleanupStaleTransactionsJob)
+    ->dailyAt('03:00')
+    ->withoutOverlapping();

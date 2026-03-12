@@ -266,42 +266,82 @@ class MessageController extends Controller
                 ]);
             }
 
-            // Créer une conversation si c'est une réponse
-            $conversation = null;
-            if ($createConversation && $originalMessage) {
-                // Obtenir ou créer la conversation entre les deux utilisateurs
-                $conversation = $sender->getOrCreateConversationWith($recipient);
+            // Créer automatiquement une conversation pour TOUT message anonyme
+            $conversation = $sender->getOrCreateConversationWith($recipient);
 
-                \Log::info('💬 Conversation obtained/created from anonymous reply', [
+            \Log::info('💬 Conversation obtained/created from anonymous message', [
+                'conversation_id' => $conversation->id,
+                'sender_id' => $sender->id,
+                'recipient_id' => $recipient->id,
+                'is_reply' => $createConversation && $originalMessage,
+            ]);
+
+            // Épingler le message anonyme dans la conversation
+            $conversation->update([
+                'pinned_anonymous_message_id' => $message->id,
+            ]);
+
+            // Créer un ChatMessage dans la conversation
+            // Si un cadeau est envoyé, créer un message de type "gift" pour l'afficher correctement dans le chat.
+            if ($giftTransaction) {
+                // Associer aussi la transaction à la conversation pour les vues chat
+                if (!$giftTransaction->conversation_id) {
+                    $giftTransaction->update(['conversation_id' => $conversation->id]);
+                }
+
+                $giftTransaction->loadMissing('gift');
+
+                $chatMessage = ChatMessage::create([
                     'conversation_id' => $conversation->id,
                     'sender_id' => $sender->id,
-                    'recipient_id' => $recipient->id,
+                    'content' => $validated['gift_message']
+                        ?? $message->content
+                        ?? "🎁 A envoyé un cadeau : " . ($giftTransaction->gift?->name ?? 'Cadeau'),
+                    'type' => ChatMessage::TYPE_GIFT,
+                    'gift_transaction_id' => $giftTransaction->id,
+                    'anonymous_message_id' => $message->id,
                 ]);
-
-                // Épingler le message anonyme original dans la conversation
-                $conversation->update([
-                    'pinned_anonymous_message_id' => $originalMessage->id,
-                ]);
-
-                // Créer un message système dans la conversation
-                $systemMessage = ChatMessage::create([
+            } else {
+                // Message normal (texte/media)
+                $chatMessage = ChatMessage::create([
                     'conversation_id' => $conversation->id,
                     'sender_id' => $sender->id,
-                    'content' => "Conversation démarrée depuis un message anonyme",
-                    'type' => ChatMessage::TYPE_SYSTEM,
-                    'anonymous_message_id' => $originalMessage->id,
-                ]);
-
-                \Log::info('📌 Anonymous message pinned in conversation', [
-                    'conversation_id' => $conversation->id,
-                    'pinned_message_id' => $originalMessage->id,
+                    'content' => $message->content ?: '',
+                    'type' => $message->media_type === 'audio' ? ChatMessage::TYPE_AUDIO :
+                             ($message->media_type === 'image' ? ChatMessage::TYPE_IMAGE : ChatMessage::TYPE_TEXT),
+                    'media_url' => $message->media_url,
+                    'anonymous_message_id' => $message->id,
+                    'metadata' => $message->voice_type && $message->voice_type !== 'normal'
+                        ? json_encode(['voice_type' => $message->voice_type])
+                        : null,
                 ]);
             }
 
+            \Log::info('💬 Chat message created from anonymous message', [
+                'chat_message_id' => $chatMessage->id,
+                'anonymous_message_id' => $message->id,
+                'conversation_id' => $conversation->id,
+            ]);
+
+            // Mettre à jour last_message_at pour que la conversation apparaisse dans la liste
+            $conversation->touch('last_message_at');
+
+            \Log::info('📌 Anonymous message pinned in conversation', [
+                'conversation_id' => $conversation->id,
+                'pinned_message_id' => $message->id,
+            ]);
+
             DB::commit();
 
-            // Déclencher l'événement
-            event(new MessageSent($message));
+            // Déclencher les événements
+            event(new MessageSent($message)); // Pour la notification de message anonyme
+            event(new \App\Events\ChatMessageSent($chatMessage, $recipient->id)); // Pour la conversation
+
+            \Log::info('📡 Events broadcasted', [
+                'message_sent' => $message->id,
+                'chat_message_sent' => $chatMessage->id,
+                'conversation_id' => $conversation->id,
+            ]);
 
             // Envoyer notification
             $this->notificationService->sendNewMessageNotification($message);
@@ -725,19 +765,38 @@ class MessageController extends Controller
             ]);
 
             // Créer également le message de réponse dans la conversation
-            // Le message de réponse doit pointer vers le message ORIGINAL (pour le style reply-to)
-            $chatMessage = ChatMessage::create([
-                'conversation_id' => $conversation->id,
-                'sender_id' => $sender->id,
-                'content' => $message->content ?: '',
-                'type' => $message->media_type === 'audio' ? ChatMessage::TYPE_AUDIO :
-                         ($message->media_type === 'image' ? ChatMessage::TYPE_IMAGE : ChatMessage::TYPE_TEXT),
-                'media_url' => $message->media_url,
-                'anonymous_message_id' => $originalMessage->id, // Pointer vers le message original pour le reply-to
-                'metadata' => $message->voice_type && $message->voice_type !== 'normal'
-                    ? json_encode(['voice_type' => $message->voice_type])
-                    : null,
-            ]);
+            // Le message doit pointer vers le message ORIGINAL (pour le style reply-to)
+            if ($giftTransaction) {
+                if (!$giftTransaction->conversation_id) {
+                    $giftTransaction->update(['conversation_id' => $conversation->id]);
+                }
+
+                $giftTransaction->loadMissing('gift');
+
+                $chatMessage = ChatMessage::create([
+                    'conversation_id' => $conversation->id,
+                    'sender_id' => $sender->id,
+                    'content' => $validated['gift_message']
+                        ?? $message->content
+                        ?? "🎁 A envoyé un cadeau : " . ($giftTransaction->gift?->name ?? 'Cadeau'),
+                    'type' => ChatMessage::TYPE_GIFT,
+                    'gift_transaction_id' => $giftTransaction->id,
+                    'anonymous_message_id' => $originalMessage->id,
+                ]);
+            } else {
+                $chatMessage = ChatMessage::create([
+                    'conversation_id' => $conversation->id,
+                    'sender_id' => $sender->id,
+                    'content' => $message->content ?: '',
+                    'type' => $message->media_type === 'audio' ? ChatMessage::TYPE_AUDIO :
+                             ($message->media_type === 'image' ? ChatMessage::TYPE_IMAGE : ChatMessage::TYPE_TEXT),
+                    'media_url' => $message->media_url,
+                    'anonymous_message_id' => $originalMessage->id, // Pointer vers le message original pour le reply-to
+                    'metadata' => $message->voice_type && $message->voice_type !== 'normal'
+                        ? json_encode(['voice_type' => $message->voice_type])
+                        : null,
+                ]);
+            }
 
             \Log::info('💬 Chat message created from anonymous reply', [
                 'chat_message_id' => $chatMessage->id,
@@ -757,8 +816,15 @@ class MessageController extends Controller
 
             DB::commit();
 
-            // Déclencher l'événement
-            event(new MessageSent($message));
+            // Déclencher les événements
+            event(new MessageSent($message)); // Pour la notification de message anonyme
+            event(new \App\Events\ChatMessageSent($chatMessage, $recipient->id)); // Pour la conversation
+
+            \Log::info('📡 Events broadcasted', [
+                'message_sent' => $message->id,
+                'chat_message_sent' => $chatMessage->id,
+                'conversation_id' => $conversation->id,
+            ]);
 
             // Envoyer notification
             $this->notificationService->sendNewMessageNotification($message);

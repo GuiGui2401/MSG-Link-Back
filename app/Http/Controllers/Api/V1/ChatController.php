@@ -41,6 +41,7 @@ class ChatController extends Controller
                 'participantOne:id,first_name,last_name,username,avatar,last_seen_at',
                 'participantTwo:id,first_name,last_name,username,avatar,last_seen_at',
                 'lastMessage',
+                'lastMessage.giftTransaction.gift',
             ])
             // Trier par last_message_at si présent, sinon par created_at
             ->orderByRaw('COALESCE(last_message_at, created_at) DESC')

@@ -20,6 +20,8 @@ use App\Http\Controllers\Api\V1\FreemopayController;
 use App\Http\Controllers\Api\V1\SettingController;
 use App\Http\Controllers\Api\V1\PremiumPassController;
 use App\Http\Controllers\Api\V1\AnonymousMessageRevealController;
+use App\Http\Controllers\Api\V1\SponsorshipPackageController;
+use App\Http\Controllers\Api\V1\SponsorshipController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\ModerationController;
@@ -36,7 +38,9 @@ use App\Http\Controllers\Api\LegalPageController;
 Route::prefix('v1')->group(function () {
 
     // ==================== BROADCASTING AUTH ====================
-    Broadcast::routes(['middleware' => ['auth:sanctum']]);
+    // Rate limit plus généreux pour l'authentification WebSocket
+    // 120 requêtes par minute au lieu du défaut (60)
+    Broadcast::routes(['middleware' => ['auth:sanctum', 'throttle:120,1']]);
 
     // ==================== AUTH ROUTES (Public) ====================
     Route::prefix('auth')->group(function () {
@@ -62,6 +66,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/gifts/{gift}', [GiftController::class, 'show'])->where('gift', '[0-9]+');
     Route::get('/gift-categories', [GiftController::class, 'getCategories']);
     Route::get('/gift-categories/{categoryId}/gifts', [GiftController::class, 'getGiftsByCategory']);
+
+    // ==================== PUBLIC SPONSORSHIP PACKAGES ====================
+    Route::get('/sponsorship-packages', [SponsorshipPackageController::class, 'index']);
 
     // ==================== PUBLIC GROUP CATEGORIES ====================
     Route::get('/group-categories', [GroupCategoryController::class, 'index']);
@@ -263,12 +270,20 @@ Route::prefix('v1')->group(function () {
 
             // Dépôts
             Route::post('/deposit/initiate', [WalletController::class, 'initiateDeposit']);
+            Route::post('/deposit/check-status', [WalletController::class, 'checkDepositStatus']);
 
             // Retraits
             Route::post('/withdraw', [WalletController::class, 'withdraw']);
             Route::get('/withdrawals', [WalletController::class, 'withdrawals']);
             Route::get('/withdrawals/{withdrawal}', [WalletController::class, 'showWithdrawal']);
             Route::delete('/withdrawals/{withdrawal}', [WalletController::class, 'cancelWithdrawal']);
+        });
+
+        // ==================== SPONSORSHIP ====================
+        Route::prefix('sponsorships')->group(function () {
+            Route::post('/purchase', [SponsorshipController::class, 'purchase']);
+            Route::get('/feed', [SponsorshipController::class, 'feed']);
+            Route::post('/{sponsorship}/impression', [SponsorshipController::class, 'impression']);
         });
 
         // ==================== PAYMENT PROVIDERS CONFIG ====================
