@@ -283,6 +283,8 @@ Route::prefix('v1')->group(function () {
         Route::prefix('sponsorships')->group(function () {
             Route::post('/purchase', [SponsorshipController::class, 'purchase']);
             Route::get('/feed', [SponsorshipController::class, 'feed']);
+            Route::get('/mine', [SponsorshipController::class, 'mine']);
+            Route::get('/dashboard', [SponsorshipController::class, 'dashboard']);
             Route::post('/{sponsorship}/impression', [SponsorshipController::class, 'impression']);
         });
 

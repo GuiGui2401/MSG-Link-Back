@@ -67,6 +67,60 @@ class SponsorshipController extends Controller
     }
 
     /**
+     * Retourner les sponsorings de l'utilisateur courant (pour dashboard).
+     *
+     * GET /api/v1/sponsorships/mine?limit=50
+     */
+    public function mine(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $limit = (int) $request->get('limit', 50);
+        $limit = max(1, min($limit, 100));
+
+        $sponsorships = Sponsorship::query()
+            ->where('user_id', $user->id)
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get();
+
+        return response()->json([
+            'sponsorships' => SponsorshipResource::collection($sponsorships),
+        ]);
+    }
+
+    /**
+     * Statistiques du dashboard sponsoring.
+     *
+     * GET /api/v1/sponsorships/dashboard
+     */
+    public function dashboard(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $now = now();
+
+        $base = Sponsorship::query()->where('user_id', $user->id);
+
+        $totalTarget = (int) (clone $base)
+            ->selectRaw('COALESCE(SUM(COALESCE(NULLIF(reach_max, 0), reach_min)), 0) as total_target')
+            ->value('total_target');
+
+        $stats = [
+            'total_count' => (int) (clone $base)->count(),
+            'active_count' => (int) (clone $base)->where('status', Sponsorship::STATUS_ACTIVE)->count(),
+            'paused_count' => (int) (clone $base)->where('status', Sponsorship::STATUS_PAUSED)->count(),
+            'completed_count' => (int) (clone $base)->where('status', Sponsorship::STATUS_COMPLETED)->count(),
+            'cancelled_count' => (int) (clone $base)->where('status', Sponsorship::STATUS_CANCELLED)->count(),
+            'expired_count' => (int) (clone $base)->whereNotNull('ends_at')->where('ends_at', '<=', $now)->count(),
+            'total_delivered' => (int) (clone $base)->sum('delivered_count'),
+            'total_target' => $totalTarget,
+        ];
+
+        return response()->json([
+            'stats' => $stats,
+        ]);
+    }
+
+    /**
      * Marquer une impression (1 user compte 1 fois) et incrémenter delivered_count.
      *
      * POST /api/v1/sponsorships/{sponsorship}/impression
