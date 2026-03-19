@@ -455,13 +455,19 @@ class ConfessionController extends Controller
             ->orderBy('created_at', 'desc') // Les plus récents en premier
             ->get()
             ->map(function ($comment) use ($currentUserId, $request) {
+                // Vérifier si l'utilisateur connecté a un Premium Pass actif
+                $viewer = $request->user();
+                $hasPremiumPass = $viewer && $viewer->is_premium && $viewer->premium_expires_at && $viewer->premium_expires_at->isFuture();
+                $isOwner = $comment->author_id === $currentUserId;
+                $shouldRevealIdentity = $isOwner || $hasPremiumPass;
+
                 $commentData = [
                     'id' => $comment->id,
                     'content' => $comment->getDecryptedAttribute('content') ?? $comment->content,
                     'is_anonymous' => $comment->is_anonymous,
                     'media_type' => $comment->media_type ?? 'none',
                     'media_url' => $comment->media_url ? asset('storage/' . $comment->media_url) : null,
-                    'author' => $comment->is_anonymous ? [
+                    'author' => ($comment->is_anonymous && !$shouldRevealIdentity) ? [
                         'name' => 'Anonyme',
                         'initial' => '?',
                         'avatar_url' => null,
@@ -477,14 +483,17 @@ class ConfessionController extends Controller
                     'likes_count' => $comment->liked_by_count ?? 0,
                     'is_liked' => $request->user() ? $comment->isLikedBy($request->user()) : false,
                     'replies_count' => $comment->replies_count ?? 0,
-                    'replies' => $comment->replies->map(function ($reply) use ($currentUserId, $request) {
+                    'replies' => $comment->replies->map(function ($reply) use ($currentUserId, $request, $hasPremiumPass) {
+                        $isReplyOwner = $reply->author_id === $currentUserId;
+                        $shouldRevealReplyIdentity = $isReplyOwner || $hasPremiumPass;
+
                         return [
                             'id' => $reply->id,
                             'content' => $reply->getDecryptedAttribute('content') ?? $reply->content,
                             'is_anonymous' => $reply->is_anonymous,
                             'media_type' => $reply->media_type ?? 'none',
                             'media_url' => $reply->media_url ? asset('storage/' . $reply->media_url) : null,
-                            'author' => $reply->is_anonymous ? [
+                            'author' => ($reply->is_anonymous && !$shouldRevealReplyIdentity) ? [
                                 'name' => 'Anonyme',
                                 'initial' => '?',
                                 'avatar_url' => null,
@@ -621,6 +630,19 @@ class ConfessionController extends Controller
         $comment->load('author:id,first_name,username,avatar');
         $comment->loadCount('likedBy');
 
+        // Envoyer une notification FCM
+        try {
+            $this->notificationService->sendConfessionCommentNotification($confession, $comment);
+        } catch (\Exception $e) {
+            \Log::warning('Confession comment notification failed: ' . $e->getMessage());
+        }
+
+        // Vérifier si l'utilisateur connecté a un Premium Pass actif
+        $viewer = $request->user();
+        $hasPremiumPass = $viewer && $viewer->is_premium && $viewer->premium_expires_at && $viewer->premium_expires_at->isFuture();
+        $isOwner = true; // C'est le commentaire qu'on vient de créer
+        $shouldRevealIdentity = $isOwner || $hasPremiumPass;
+
         return response()->json([
             'message' => 'Commentaire ajouté avec succès.',
             'comment' => [
@@ -629,7 +651,7 @@ class ConfessionController extends Controller
                 'is_anonymous' => $comment->is_anonymous,
                 'media_type' => $comment->media_type ?? 'none',
                 'media_url' => $comment->media_url ? asset('storage/' . $comment->media_url) : null,
-                'author' => $comment->is_anonymous ? [
+                'author' => ($comment->is_anonymous && !$shouldRevealIdentity) ? [
                     'name' => 'Anonyme',
                     'initial' => '?',
                     'avatar_url' => null,

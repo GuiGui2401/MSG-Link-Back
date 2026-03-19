@@ -534,6 +534,157 @@ class AdminWebController extends Controller
             ->with('success', "Le membre d'équipe {$user->username} a été créé avec succès.");
     }
 
+    // ==================== FCM TOKENS ====================
+
+    public function fcmTokens(Request $request)
+    {
+        \Log::info('📱 [ADMIN_FCM] Affichage de la page FCM Tokens');
+
+        // Statistiques globales
+        $stats = [
+            'total_users' => User::count(),
+            'with_fcm' => User::whereNotNull('fcm_token')->count(),
+            'without_fcm' => User::whereNull('fcm_token')->count(),
+            'percentage_with_fcm' => User::count() > 0
+                ? round((User::whereNotNull('fcm_token')->count() / User::count()) * 100, 2)
+                : 0,
+        ];
+
+        \Log::info('📊 [ADMIN_FCM] Stats:', $stats);
+
+        // Filtres
+        $query = User::query();
+
+        // Filtre par statut FCM
+        if ($status = $request->get('fcm_status')) {
+            if ($status === 'with') {
+                $query->whereNotNull('fcm_token');
+            } elseif ($status === 'without') {
+                $query->whereNull('fcm_token');
+            }
+        }
+
+        // Recherche
+        if ($search = $request->get('search')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                    ->orWhere('last_name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('username', 'like', "%{$search}%");
+            });
+        }
+
+        $users = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
+
+        \Log::info('👥 [ADMIN_FCM] Utilisateurs chargés: ' . $users->total());
+
+        return view('admin.fcm-tokens.index', compact('stats', 'users'));
+    }
+
+    // ==================== FCM NOTIFICATIONS ====================
+
+    public function fcmNotifications()
+    {
+        \Log::info('📢 [ADMIN_FCM] Affichage de la page FCM Notifications');
+
+        // Statistiques
+        $stats = [
+            'total_users' => User::count(),
+            'with_fcm' => User::whereNotNull('fcm_token')->count(),
+            'percentage_with_fcm' => User::count() > 0
+                ? round((User::whereNotNull('fcm_token')->count() / User::count()) * 100, 2)
+                : 0,
+        ];
+
+        return view('admin.fcm-notifications.index', compact('stats'));
+    }
+
+    public function sendFcmNotification(Request $request)
+    {
+        \Log::info('📢 [ADMIN_FCM] Envoi de notification globale');
+
+        $validated = $request->validate([
+            'title' => 'required|string|max:100',
+            'message' => 'required|string|max:500',
+        ]);
+
+        try {
+            $notificationService = app(\App\Services\NotificationService::class);
+
+            // Envoyer au topic dédié aux annonces globales
+            // Ce topic est souscrit par tous les utilisateurs lors du login
+            $topic = 'global_announcements';
+
+            // 1. Envoyer la notification push FCM
+            $result = $notificationService->sendTopicNotification(
+                $topic,
+                $validated['title'],
+                $validated['message'],
+                [
+                    'type' => 'global_announcement',
+                    'sent_by' => auth()->user()->username,
+                    'sent_at' => now()->toDateTimeString(),
+                ]
+            );
+
+            if ($result) {
+                \Log::info("✅ [ADMIN_FCM] Notification FCM envoyée au topic: {$topic}");
+
+                // 2. Sauvegarder dans la table notifications pour chaque utilisateur avec FCM token
+                \Log::info("💾 [ADMIN_FCM] Sauvegarde dans la base de données...");
+
+                $usersWithFcm = User::whereNotNull('fcm_token')->get();
+                $notificationsCreated = 0;
+
+                DB::beginTransaction();
+                try {
+                    foreach ($usersWithFcm as $user) {
+                        $notificationService->createNotification(
+                            $user,
+                            'global_announcement',
+                            $validated['title'],
+                            $validated['message'],
+                            [
+                                'sent_by' => auth()->user()->username,
+                                'sent_at' => now()->toDateTimeString(),
+                            ]
+                        );
+                        $notificationsCreated++;
+                    }
+
+                    DB::commit();
+
+                    \Log::info("✅ [ADMIN_FCM] {$notificationsCreated} notifications sauvegardées en base", [
+                        'title' => $validated['title'],
+                        'message' => $validated['message'],
+                        'admin' => auth()->user()->username,
+                    ]);
+
+                    return redirect()->route('admin.fcm-notifications.index')
+                        ->with('success', "✅ Notification envoyée avec succès à {$notificationsCreated} utilisateurs et sauvegardée dans leur historique !");
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    \Log::error('❌ [ADMIN_FCM] Erreur lors de la sauvegarde en base', [
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    // La notification FCM a été envoyée mais pas sauvegardée en base
+                    return redirect()->route('admin.fcm-notifications.index')
+                        ->with('success', "⚠️ Notification FCM envoyée à ~{$usersWithFcm->count()} utilisateurs, mais erreur lors de la sauvegarde en base : {$e->getMessage()}");
+                }
+            } else {
+                return back()->with('error', '❌ Impossible d\'envoyer la notification. Vérifiez la configuration Firebase.');
+            }
+        } catch (\Exception $e) {
+            \Log::error('❌ [ADMIN_FCM] Erreur envoi notification', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return back()->with('error', '❌ Erreur lors de l\'envoi de la notification : ' . $e->getMessage());
+        }
+    }
+
     // ==================== USERS ====================
 
     public function users(Request $request)

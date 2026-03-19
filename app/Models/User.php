@@ -75,6 +75,13 @@ class User extends Authenticatable implements MustVerifyEmail
     ];
 
     /**
+     * The accessors to append to the model's array form.
+     */
+    protected $appends = [
+        'has_active_premium',
+    ];
+
+    /**
      * Attributs par défaut
      */
     protected $attributes = [

@@ -29,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
             'throttle.messages' => \App\Http\Middleware\ThrottleMessages::class,
+            'optional_auth' => \App\Http\Middleware\OptionalAuth::class,
         ]);
 
         // Rate limiting

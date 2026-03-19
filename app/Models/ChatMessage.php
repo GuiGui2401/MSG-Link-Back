@@ -22,6 +22,7 @@ class ChatMessage extends Model
         'voice_type',
         'gift_transaction_id',
         'anonymous_message_id',
+        'story_id',
         'is_read',
         'read_at',
         'edited_at',
@@ -82,6 +83,14 @@ class ChatMessage extends Model
     public function anonymousMessage(): BelongsTo
     {
         return $this->belongsTo(AnonymousMessage::class);
+    }
+
+    /**
+     * Story à laquelle ce message répond (si applicable)
+     */
+    public function story(): BelongsTo
+    {
+        return $this->belongsTo(Story::class);
     }
 
     // ==================== ACCESSORS ====================
@@ -225,6 +234,24 @@ class ChatMessage extends Model
             'content' => $message ?? "🎁 A envoyé un cadeau : {$transaction->gift->name}",
             'type' => self::TYPE_GIFT,
             'gift_transaction_id' => $transaction->id,
+        ]);
+    }
+
+    /**
+     * Créer un message de réponse à une story
+     */
+    public static function createStoryReplyMessage(
+        Conversation $conversation,
+        User $sender,
+        Story $story,
+        string $content
+    ): self {
+        return self::create([
+            'conversation_id' => $conversation->id,
+            'sender_id' => $sender->id,
+            'content' => $content,
+            'type' => self::TYPE_TEXT,
+            'story_id' => $story->id,
         ]);
     }
 }

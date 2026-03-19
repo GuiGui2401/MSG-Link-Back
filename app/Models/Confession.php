@@ -226,6 +226,19 @@ class Confession extends Model
             'moderated_by' => $moderator->id,
             'moderated_at' => now(),
         ]);
+
+        // Envoyer notification par topic si confession publique
+        if ($this->type === 'public') {
+            try {
+                $notificationService = app(\App\Services\NotificationService::class);
+                $notificationService->sendNewPublicConfessionTopicNotification($this);
+                \Log::info('📢 Notification topic envoyée pour confession approuvée', [
+                    'confession_id' => $this->id
+                ]);
+            } catch (\Exception $e) {
+                \Log::error('❌ Erreur notification topic confession: ' . $e->getMessage());
+            }
+        }
     }
 
     /**

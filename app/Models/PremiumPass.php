@@ -131,14 +131,25 @@ class PremiumPass extends Model
     // ==================== METHODS ====================
 
     /**
+     * Obtenir la durée du passe en jours depuis les settings
+     */
+    protected function getDurationDays(): int
+    {
+        return (int) setting('premium_duration_days', 30);
+    }
+
+    /**
      * Activer le passe premium
      */
     public function activate(): void
     {
+        $durationDays = $this->getDurationDays();
+        $expiresAt = now()->addDays($durationDays);
+
         $this->update([
             'status' => self::STATUS_ACTIVE,
             'starts_at' => now(),
-            'expires_at' => now()->addMonth(),
+            'expires_at' => $expiresAt,
         ]);
 
         // Mettre à jour le statut premium de l'utilisateur
@@ -146,7 +157,7 @@ class PremiumPass extends Model
             'is_premium' => true,
             'is_verified' => true, // Le passe premium rend le compte vérifié
             'premium_started_at' => now(),
-            'premium_expires_at' => now()->addMonth(),
+            'premium_expires_at' => $expiresAt,
             'premium_auto_renew' => $this->auto_renew,
         ]);
     }
@@ -156,9 +167,11 @@ class PremiumPass extends Model
      */
     public function renew(): void
     {
+        $durationDays = $this->getDurationDays();
+
         $newExpiry = $this->expires_at && $this->expires_at->isFuture()
-            ? $this->expires_at->addMonth()
-            : now()->addMonth();
+            ? $this->expires_at->addDays($durationDays)
+            : now()->addDays($durationDays);
 
         $this->update([
             'status' => self::STATUS_ACTIVE,

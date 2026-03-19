@@ -348,7 +348,7 @@ class GroupController extends Controller
             ], 403);
         }
 
-        $canSeeIdentity = $user->is_premium ?? false;
+        $canSeeIdentity = $user->has_active_premium ?? false;
         $perPage = $request->get('per_page', 10); // Par défaut 10 messages
         $before = $request->get('before'); // Timestamp ou message_id pour charger les anciens
 
@@ -391,9 +391,22 @@ class GroupController extends Controller
                 $message->sender_username = $message->sender->username;
                 $message->sender_avatar_url = $message->sender->avatar_url;
                 $message->sender_initial = $message->sender->initial;
+
+                // Remplacer la relation sender par un objet simple pour éviter les problèmes de sérialisation
+                $message->setRelation('sender', [
+                    'id' => $message->sender->id,
+                    'first_name' => $message->sender->first_name,
+                    'last_name' => $message->sender->last_name,
+                    'username' => $message->sender->username,
+                    'avatar_url' => $message->sender->avatar_url,
+                    'is_premium' => $message->sender->is_premium ?? false,
+                    'is_verified' => $message->sender->is_verified ?? false,
+                ]);
             } else {
                 $message->sender_name = 'Anonyme';
                 $message->sender_initial = 'A';
+                // Retirer la relation sender pour les utilisateurs non premium
+                $message->unsetRelation('sender');
             }
 
             return $message;
@@ -606,7 +619,7 @@ class GroupController extends Controller
         $message->is_own = true;
 
         // Ajouter les données du sender pour le retour API
-        $canSeeIdentity = $user->is_premium ?? false;
+        $canSeeIdentity = $user->has_active_premium ?? false;
         if ($canSeeIdentity) {
             $message->sender_first_name = $user->first_name;
             $message->sender_last_name = $user->last_name;
@@ -620,6 +633,8 @@ class GroupController extends Controller
 
         // Diffuser l'événement en temps réel
         try {
+            // Charger la relation sender pour le broadcast
+            $message->load('sender');
             broadcast(new GroupMessageSent($message))->toOthers();
         } catch (\Exception $e) {
             // Log l'erreur mais ne bloque pas l'envoi du message
@@ -726,7 +741,7 @@ class GroupController extends Controller
             ->with('user')
             ->get()
             ->map(function ($member) use ($user) {
-                $canSeeIdentity = $user->is_premium ?? false;
+                $canSeeIdentity = $user->has_active_premium ?? false;
 
                 $memberData = [
                     'id' => $member->id,

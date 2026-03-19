@@ -92,6 +92,24 @@
                         Utilisateurs
                     </a>
 
+                    <a href="{{ route('admin.fcm-tokens.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.fcm-tokens.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-bell w-5 mr-3"></i>
+                        FCM Tokens
+                        @php
+                            $usersWithoutFcm = \App\Models\User::whereNull('fcm_token')->count();
+                        @endphp
+                        @if($usersWithoutFcm > 0)
+                            <span class="ml-auto bg-yellow-500 text-gray-900 text-xs font-bold px-2 py-0.5 rounded-full">{{ $usersWithoutFcm }}</span>
+                        @endif
+                    </a>
+
+                    <a href="{{ route('admin.fcm-notifications.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.fcm-notifications.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
+                        <i class="fas fa-bullhorn w-5 mr-3"></i>
+                        Annonces Globales
+                    </a>
+
                     <a href="{{ route('admin.transactions.index') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-colors {{ request()->routeIs('admin.transactions.*') ? 'bg-primary-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white' }}">
                         <i class="fas fa-exchange-alt w-5 mr-3"></i>

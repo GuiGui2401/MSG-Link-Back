@@ -817,6 +817,9 @@ class MessageController extends Controller
             DB::commit();
 
             // Déclencher les événements
+            // NOTE: Cet endpoint n'est plus utilisé par le frontend mobile.
+            // Le frontend utilise maintenant /messages/{id}/start-conversation + /chat/conversations/{id}/messages
+            // On garde quand même les événements pour la compatibilité avec d'autres clients
             event(new MessageSent($message)); // Pour la notification de message anonyme
             event(new \App\Events\ChatMessageSent($chatMessage, $recipient->id)); // Pour la conversation
 

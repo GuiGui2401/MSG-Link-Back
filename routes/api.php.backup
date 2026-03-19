@@ -28,7 +28,6 @@ use App\Http\Controllers\Admin\ModerationController;
 use App\Http\Controllers\Admin\WithdrawalController as AdminWithdrawalController;
 use App\Http\Controllers\Admin\MaintenanceController;
 use App\Http\Controllers\Api\LegalPageController;
-use App\Http\Controllers\Api\V1\AccountDeletionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -57,13 +56,10 @@ Route::prefix('v1')->group(function () {
     Route::get('/users/by-id/{id}', [UserController::class, 'showById']);
     Route::get('/users/{username}', [UserController::class, 'show'])->where('username', '^(?!dashboard|profile|settings|blocked|stats).*$');
 
-    // ==================== PUBLIC CONFESSIONS FEED (auth optionnelle pour Premium Pass) ====================
-    // Note: Ces routes utilisent OptionalAuth pour permettre l'accès public tout en authentifiant les utilisateurs connectés
-    Route::middleware(['optional_auth'])->group(function () {
-        Route::get('/confessions', [ConfessionController::class, 'index']);
-        Route::get('/confessions/{confession}', [ConfessionController::class, 'show'])->where('confession', '[0-9]+');
-        Route::get('/confessions/{confession}/comments', [ConfessionController::class, 'getComments'])->where('confession', '[0-9]+');
-    });
+    // ==================== PUBLIC CONFESSIONS FEED ====================
+    Route::get('/confessions', [ConfessionController::class, 'index']);
+    Route::get('/confessions/{confession}', [ConfessionController::class, 'show'])->where('confession', '[0-9]+');
+    Route::get('/confessions/{confession}/comments', [ConfessionController::class, 'getComments'])->where('confession', '[0-9]+');
 
     // ==================== PUBLIC GIFTS CATALOG ====================
     Route::get('/gifts', [GiftController::class, 'index']);
@@ -97,11 +93,6 @@ Route::prefix('v1')->group(function () {
 
     // ==================== MAINTENANCE MODE STATUS (Public) ====================
     Route::get('/maintenance/status', [MaintenanceController::class, 'getStatus']);
-
-    // ==================== ACCOUNT DELETION REQUESTS (Public) ====================
-    Route::post('/account-deletion-request', [AccountDeletionController::class, 'store']);
-    Route::post('/account-deletion-request/{requestId}/cancel', [AccountDeletionController::class, 'cancel']);
-    Route::post('/account-deletion-request/{requestId}/status', [AccountDeletionController::class, 'status']);
 
     // ==================== PAYMENT WEBHOOKS (Public) ====================
     Route::prefix('payments')->group(function () {

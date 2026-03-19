@@ -57,7 +57,7 @@ class GroupMessageSent implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
-        return [
+        $data = [
             'id' => $this->message->id,
             'group_id' => $this->message->group_id,
             'sender_id' => $this->message->sender_id,
@@ -69,5 +69,19 @@ class GroupMessageSent implements ShouldBroadcastNow
             'reply_to_message_id' => $this->message->reply_to_message_id,
             'created_at' => $this->message->created_at->toIso8601String(),
         ];
+
+        // Toujours inclure les infos complètes du sender
+        // Le frontend décidera de les afficher ou non selon le statut premium de l'utilisateur
+        if ($this->message->sender) {
+            $data['sender_first_name'] = $this->message->sender->first_name;
+            $data['sender_last_name'] = $this->message->sender->last_name;
+            $data['sender_username'] = $this->message->sender->username;
+            $data['sender_avatar_url'] = $this->message->sender->avatar_url;
+            $data['sender_initial'] = $this->message->sender->initial;
+            $data['sender_is_premium'] = $this->message->sender->is_premium ?? false;
+            $data['sender_is_verified'] = $this->message->sender->is_verified ?? false;
+        }
+
+        return $data;
     }
 }

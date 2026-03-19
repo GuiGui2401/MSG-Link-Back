@@ -68,6 +68,15 @@ class AuthController extends Controller
 
         \Log::info('🔑 [AUTH_CONTROLLER] Token créé: ' . substr($token, 0, 20) . '...');
 
+        // Envoyer notification de bienvenue
+        try {
+            $notificationService = app(\App\Services\NotificationService::class);
+            $notificationService->sendWelcomeNotification($user);
+            \Log::info('🎉 [AUTH_CONTROLLER] Notification de bienvenue envoyée');
+        } catch (\Exception $e) {
+            \Log::error('❌ [AUTH_CONTROLLER] Erreur notification de bienvenue: ' . $e->getMessage());
+        }
+
         // TODO: Envoyer email/SMS de vérification
 
         return response()->json([
@@ -592,5 +601,36 @@ class AuthController extends Controller
                 'user' => new UserResource($user)
             ]
         ], 200);
+    }
+
+    /**
+     * Mettre à jour le FCM token
+     */
+    public function updateFcmToken(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'fcm_token' => 'required|string',
+        ]);
+
+        $user = $request->user();
+
+        \Log::info('📱 [AUTH_CONTROLLER] Mise à jour FCM token pour: ' . $user->username);
+
+        // Mettre à jour le token
+        $user->update(['fcm_token' => $validated['fcm_token']]);
+
+        // Souscrire aux topics
+        try {
+            $notificationService = app(\App\Services\NotificationService::class);
+            $notificationService->subscribeToAllTopics($user);
+            \Log::info('✅ [AUTH_CONTROLLER] Souscription aux topics réussie');
+        } catch (\Exception $e) {
+            \Log::error('❌ [AUTH_CONTROLLER] Erreur souscription topics: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'message' => 'FCM token mis à jour avec succès',
+            'user' => new UserResource($user->fresh()),
+        ]);
     }
 }

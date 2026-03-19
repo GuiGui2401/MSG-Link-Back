@@ -7,6 +7,7 @@ use App\Http\Resources\StoryResource;
 use App\Models\PremiumSubscription;
 use App\Models\Story;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -45,7 +46,9 @@ class StoryController extends Controller
             // Vérifier si l'utilisateur a payé pour voir l'identité
             $isOwner = $user && $user->id === $firstStory->user_id;
             $hasSubscription = $user && PremiumSubscription::hasActiveForStory($user->id, $firstStory->id);
-            $shouldRevealIdentity = $isOwner || $hasSubscription;
+            // Les utilisateurs avec Premium Pass actif voient tous les vrais noms
+            $hasPremiumPass = $user && $user->is_premium && $user->premium_expires_at && $user->premium_expires_at->isFuture();
+            $shouldRevealIdentity = $isOwner || $hasSubscription || $hasPremiumPass;
 
             // Préparer l'aperçu de la première story
             $preview = [
@@ -156,7 +159,9 @@ class StoryController extends Controller
         $isOwner = $viewer && $viewer->id === $user->id;
         $hasSubscription = $viewer && $stories->isNotEmpty() &&
             PremiumSubscription::hasActiveForStory($viewer->id, $stories->first()->id);
-        $shouldRevealIdentity = $isOwner || $hasSubscription;
+        // Les utilisateurs avec Premium Pass actif voient tous les vrais noms
+        $hasPremiumPass = $viewer && $viewer->is_premium && $viewer->premium_expires_at && $viewer->premium_expires_at->isFuture();
+        $shouldRevealIdentity = $isOwner || $hasSubscription || $hasPremiumPass;
 
         return response()->json([
             'user' => [
@@ -316,6 +321,17 @@ class StoryController extends Controller
 
         $story = Story::create($storyData);
 
+        // Envoyer notification par topic
+        try {
+            $notificationService = app(\App\Services\NotificationService::class);
+            $notificationService->sendNewStoryTopicNotification($story->load('user'));
+            \Log::info('📢 Notification topic envoyée pour nouvelle story', [
+                'story_id' => $story->id
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('❌ Erreur notification topic story: ' . $e->getMessage());
+        }
+
         return response()->json([
             'message' => 'Story créée avec succès.',
             'story' => new StoryResource($story->load('user')),
@@ -426,5 +442,106 @@ class StoryController extends Controller
             'expired_stories' => $totalStories - $activeStories,
             'total_views' => $totalViews,
         ]);
+    }
+
+    /**
+     * Répondre à une story
+     */
+    public function reply(Request $request, Story $story): JsonResponse
+    {
+        $user = $request->user();
+
+        // Valider la requête
+        $validator = \Validator::make($request->all(), [
+            'message' => 'required|string|max:1000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Message invalide.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        // Vérifier que la story est active
+        if ($story->is_expired) {
+            return response()->json([
+                'message' => 'Cette story a expiré.',
+            ], 404);
+        }
+
+        // Vérifier que ce n'est pas sa propre story
+        if ($story->user_id === $user->id) {
+            return response()->json([
+                'message' => 'Vous ne pouvez pas répondre à votre propre story.',
+            ], 422);
+        }
+
+        // Récupérer le créateur de la story
+        $storyOwner = $story->user;
+
+        if (!$storyOwner) {
+            return response()->json([
+                'message' => 'Utilisateur non trouvé.',
+            ], 404);
+        }
+
+        // Vérifier les blocages
+        if ($user->isBlockedBy($storyOwner) || $user->hasBlocked($storyOwner)) {
+            return response()->json([
+                'message' => 'Impossible de répondre à cette story.',
+            ], 422);
+        }
+
+        try {
+            \DB::beginTransaction();
+
+            // Créer ou récupérer la conversation
+            $conversation = $user->getOrCreateConversationWith($storyOwner);
+
+            // Créer le message de réponse à la story
+            $message = \App\Models\ChatMessage::createStoryReplyMessage(
+                $conversation,
+                $user,
+                $story,
+                $request->input('message')
+            );
+
+            // Mettre à jour la conversation
+            $conversation->updateAfterMessage();
+
+            \DB::commit();
+
+            // Diffuser l'événement de message
+            try {
+                $message->load(['sender', 'story']);
+                event(new \App\Events\ChatMessageSent($message, $storyOwner->id));
+            } catch (\Exception $e) {
+                \Log::warning('Broadcasting failed for story reply: ' . $e->getMessage());
+            }
+
+            // Envoyer une notification FCM au créateur de la story
+            try {
+                $notificationService = app(NotificationService::class);
+                $notificationService->sendStoryReplyNotification($story, $message);
+            } catch (\Exception $e) {
+                \Log::warning('Story reply notification failed: ' . $e->getMessage());
+            }
+
+            return response()->json([
+                'message' => 'Réponse envoyée avec succès.',
+                'conversation_id' => $conversation->id,
+                'message_id' => $message->id,
+            ]);
+        } catch (\Exception $e) {
+            \DB::rollBack();
+
+            \Log::error('Error replying to story: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Erreur lors de l\'envoi de la réponse.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

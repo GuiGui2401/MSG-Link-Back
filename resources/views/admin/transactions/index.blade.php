@@ -68,8 +68,13 @@
                                     <i class="fas fa-user text-gray-500"></i>
                                 </div>
                                 <div>
-                                    <div class="font-medium text-gray-900">{{ $transaction->user->name }}</div>
-                                    <div class="text-sm text-gray-500">{{ $transaction->user->email }}</div>
+                                    @if($transaction->user)
+                                        <div class="font-medium text-gray-900">{{ $transaction->user->name }}</div>
+                                        <div class="text-sm text-gray-500">{{ $transaction->user->email }}</div>
+                                    @else
+                                        <div class="font-medium text-gray-500 italic">Utilisateur supprimé</div>
+                                        <div class="text-sm text-gray-400">ID: {{ $transaction->user_id ?? 'N/A' }}</div>
+                                    @endif
                                 </div>
                             </div>
                         </td>

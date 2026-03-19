@@ -154,6 +154,8 @@ class ChatController extends Controller
                 'sender:id,first_name,last_name,username,avatar',
                 'giftTransaction.gift',
                 'anonymousMessage:id,content,created_at',
+                'story:id,user_id,type,content,media_url,thumbnail_url,background_color,created_at',
+                'story.user:id,username,first_name,last_name,avatar',
             ]);
 
         // Si l'utilisateur a masqué la conversation, ne montrer que les messages après cette date
@@ -275,7 +277,9 @@ class ChatController extends Controller
         // Charger les relations
         $message->load([
             'sender:id,first_name,last_name,username,avatar',
-            'anonymousMessage:id,content,created_at'
+            'anonymousMessage:id,content,created_at',
+            'story:id,user_id,type,content,media_url,thumbnail_url,background_color,created_at',
+            'story.user:id,username,first_name,last_name,avatar',
         ]);
 
         // Diffuser l'événement en temps réel
@@ -923,7 +927,9 @@ class ChatController extends Controller
             // Recharger le message avec ses relations
             $message->load([
                 'sender:id,first_name,last_name,username,avatar',
-                'anonymousMessage:id,content,created_at'
+                'anonymousMessage:id,content,created_at',
+                'story:id,user_id,type,content,media_url,thumbnail_url,background_color,created_at',
+                'story.user:id,username,first_name,last_name,avatar',
             ]);
 
             DB::commit();

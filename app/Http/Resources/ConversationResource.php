@@ -31,8 +31,8 @@ class ConversationResource extends JsonResource
             ];
         }
 
-        // Vérifier si l'identité peut être révélée (premium ou payé pour révéler)
-        $canViewIdentity = $user->is_premium || $this->isIdentityRevealedFor($user);
+        // Vérifier si l'identité peut être révélée (premium actif ou payé pour révéler)
+        $canViewIdentity = $user->has_active_premium || $this->isIdentityRevealedFor($user);
 
         // Récupérer l'anonymous_message_id depuis le premier message de la conversation
         $anonymousMessageId = $this->messages()->orderBy('created_at')->value('anonymous_message_id');

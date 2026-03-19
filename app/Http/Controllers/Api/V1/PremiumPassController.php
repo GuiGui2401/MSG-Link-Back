@@ -22,10 +22,15 @@ class PremiumPassController extends Controller
     {
         $price = $this->premiumPassService->getPrice();
 
+        // Récupérer la durée depuis les settings
+        $durationDays = (int) setting('premium_duration_days', 30);
+        $durationText = $durationDays == 30 ? '1 mois' : "$durationDays jours";
+
         return response()->json([
             'price' => $price,
             'formatted_price' => number_format($price, 0, ',', ' ') . ' FCFA',
-            'duration' => '1 mois',
+            'duration' => $durationText,
+            'duration_days' => $durationDays,
             'features' => [
                 'Compte vérifié avec badge bleu',
                 'Voir l\'identité de tous les utilisateurs',
@@ -49,6 +54,7 @@ class PremiumPassController extends Controller
 
         return response()->json([
             'is_premium' => $stats['is_premium'],
+            'has_active_premium' => $this->premiumPassService->hasActivePremium($user),
             'is_verified' => $user->is_verified,
             'current_pass' => $stats['current_pass'],
             'expires_at' => $stats['expires_at'],

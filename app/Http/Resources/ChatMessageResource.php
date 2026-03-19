@@ -74,6 +74,25 @@ class ChatMessageResource extends JsonResource
                 ];
             }),
 
+            // Si c'est une réponse à une story
+            'story' => $this->when($this->relationLoaded('story') && $this->story, function () {
+                return [
+                    'id' => $this->story->id,
+                    'type' => $this->story->type,
+                    'content' => $this->story->content,
+                    'media_url' => $this->story->media_full_url,
+                    'thumbnail_url' => $this->story->thumbnail_full_url,
+                    'background_color' => $this->story->background_color,
+                    'created_at' => $this->story->created_at->toIso8601String(),
+                    'user' => $this->when($this->story->relationLoaded('user') && $this->story->user, [
+                        'id' => $this->story->user->id,
+                        'username' => $this->story->user->username,
+                        'full_name' => $this->story->user->full_name,
+                        'avatar_url' => $this->story->user->avatar_url,
+                    ]),
+                ];
+            }),
+
             'is_read' => $this->is_read,
             'read_at' => $this->read_at?->toIso8601String(),
 

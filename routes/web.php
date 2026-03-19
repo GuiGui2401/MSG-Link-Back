@@ -133,6 +133,13 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::post('/{user}/unban', [AdminWebController::class, 'unbanUser'])->name('admin.users.unban');
     });
 
+    // FCM Tokens
+    Route::get('/fcm-tokens', [AdminWebController::class, 'fcmTokens'])->name('admin.fcm-tokens.index');
+
+    // FCM Notifications (Global Announcements)
+    Route::get('/fcm-notifications', [AdminWebController::class, 'fcmNotifications'])->name('admin.fcm-notifications.index');
+    Route::post('/fcm-notifications/send', [AdminWebController::class, 'sendFcmNotification'])->name('admin.fcm-notifications.send');
+
     // Moderation
     Route::prefix('moderation')->group(function () {
         Route::get('/', [AdminWebController::class, 'moderation'])->name('admin.moderation.index');

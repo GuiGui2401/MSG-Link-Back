@@ -17,7 +17,7 @@ class PremiumPassService
     public function getPrice(): int
     {
         // Essayer de récupérer le prix depuis les settings
-        $setting = \App\Models\Setting::where('key', 'premium_pass_monthly_price')->first();
+        $setting = \App\Models\Setting::where('key', 'premium_monthly_price')->first();
 
         if ($setting && is_numeric($setting->value)) {
             return (int) $setting->value;
