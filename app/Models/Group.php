@@ -86,7 +86,7 @@ class Group extends Model
      */
     public function messages(): HasMany
     {
-        return $this->hasMany(GroupMessage::class)->orderBy('created_at', 'asc');
+        return $this->hasMany(GroupMessage::class);
     }
 
     /**
