@@ -28,7 +28,22 @@ class UserController extends Controller
         ]);
 
         $query = User::active()
-            ->select(['id', 'first_name', 'last_name', 'username', 'avatar', 'bio']);
+            ->select([
+                'id',
+                'first_name',
+                'last_name',
+                'username',
+                'avatar',
+                'cover_photo',
+                'bio',
+                'is_verified',
+                'is_premium',
+                'premium_started_at',
+                'premium_expires_at',
+                'last_seen_at',
+                'created_at',
+                'updated_at',
+            ]);
 
         if ($request->has('search')) {
             $query->search($request->search);

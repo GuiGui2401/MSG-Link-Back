@@ -114,6 +114,15 @@ class Story extends Model
             ->withTimestamps();
     }
 
+    /**
+     * Utilisateurs qui ont liké la story
+     */
+    public function likedBy(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'story_likes')
+            ->withTimestamps();
+    }
+
     // ==================== SCOPES ====================
 
     /**
@@ -225,5 +234,39 @@ class Story extends Model
             ->withPivot('created_at')
             ->orderBy('story_views.created_at', 'desc')
             ->get();
+    }
+
+    /**
+     * Liker une story par un utilisateur
+     */
+    public function likeBy(User $user): bool
+    {
+        if ($this->isLikedBy($user)) {
+            return false;
+        }
+
+        $this->likedBy()->attach($user->id);
+        return true;
+    }
+
+    /**
+     * Vérifier si un utilisateur a liké la story
+     */
+    public function isLikedBy(User $user): bool
+    {
+        return $this->likedBy()->where('user_id', $user->id)->exists();
+    }
+
+    /**
+     * Unliker une story par un utilisateur
+     */
+    public function unlikeBy(User $user): bool
+    {
+        if (!$this->isLikedBy($user)) {
+            return false;
+        }
+
+        $this->likedBy()->detach($user->id);
+        return true;
     }
 }

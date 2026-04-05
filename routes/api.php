@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\V1\PremiumPassController;
 use App\Http\Controllers\Api\V1\AnonymousMessageRevealController;
 use App\Http\Controllers\Api\V1\SponsorshipPackageController;
 use App\Http\Controllers\Api\V1\SponsorshipController;
+use App\Http\Controllers\Api\V1\ProfileViewController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\ModerationController;
@@ -158,6 +159,12 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{username}/block', [UserController::class, 'unblock']);
         });
 
+        // ==================== PROFILE VIEWS ====================
+        Route::prefix('profile-views')->group(function () {
+            Route::get('/', [ProfileViewController::class, 'index']);
+            Route::post('/', [ProfileViewController::class, 'store']);
+        });
+
         // ==================== CONTACTS ====================
         Route::prefix('contacts')->group(function () {
             Route::post('/sync', [ContactController::class, 'sync']);
@@ -249,6 +256,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{group}/members/{member}', [GroupController::class, 'removeMember']);
             Route::put('/{group}/members/{member}/role', [GroupController::class, 'updateMemberRole']);
             Route::post('/{group}/regenerate-invite', [GroupController::class, 'regenerateInviteCode']);
+            Route::put('/{group}/posting-permission', [GroupController::class, 'updatePostingPermission']);
             Route::post('/{group}/leave', [GroupController::class, 'leave']);
             Route::post('/{group}/report', [GroupController::class, 'report']);
         });
@@ -354,6 +362,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/{story}', [StoryController::class, 'show']);
             Route::post('/{story}/view', [StoryController::class, 'markAsViewed']);
             Route::get('/{story}/viewers', [StoryController::class, 'viewers']);
+            Route::post('/{story}/like', [StoryController::class, 'like']);
             Route::post('/{story}/reply', [StoryController::class, 'reply']);
             Route::delete('/{story}', [StoryController::class, 'destroy']);
         });

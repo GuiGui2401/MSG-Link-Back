@@ -380,35 +380,35 @@ class GroupController extends Controller
         }
 
         $canSeeIdentity = $user->has_active_premium ?? false;
-        $perPage = $request->get('per_page', 10); // Par défaut 10 messages
-        $before = $request->get('before'); // Timestamp ou message_id pour charger les anciens
+        $perPage = $request->get('per_page', 50); // Aligné avec ChatController
+        $currentPage = $request->get('page', 1);
 
         // Construire la requête de base - Toujours charger le sender pour avoir l'avatar
-        $query = $group->messages()->with('sender');
+        $messagesQuery = $group->messages()->with('sender');
 
-        // Si 'before' est fourni, charger les messages avant ce timestamp/id
-        if ($before) {
-            // Vérifier si c'est un ID ou un timestamp
-            if (is_numeric($before) && $before < 1000000000000) {
-                // C'est un message_id
-                $query->where('id', '<', $before);
-            } else {
-                // C'est un timestamp
-                $query->where('created_at', '<', $before);
-            }
+        // Compter le total de messages
+        $totalMessages = $messagesQuery->count();
+
+        // Calculer la pagination inversée (comme ChatController)
+        // Page 1 = les messages les plus récents
+        // Page 2 = les messages plus anciens
+        $lastPage = ceil($totalMessages / $perPage);
+        $reversedPage = $lastPage - $currentPage + 1;
+
+        // Si page inversée < 1, prendre page 1
+        if ($reversedPage < 1) {
+            $reversedPage = 1;
         }
 
-        // Toujours trier par DESC pour avoir les plus récents en premier
-        $query->orderBy('created_at', 'desc')->orderBy('id', 'desc');
+        // Récupérer les messages par ordre ASC (anciens en premier)
+        // mais en paginant depuis la fin
+        $messages = $messagesQuery
+            ->orderBy('created_at', 'asc')
+            ->orderBy('id', 'asc')
+            ->paginate($perPage, ['*'], 'page', $reversedPage);
 
-        // Limiter les résultats
-        $messages = $query->limit($perPage)->get();
-
-        // Inverser pour avoir l'ordre chronologique (ancien → récent) pour l'affichage
-        $messages = $messages->reverse()->values();
-
-        // Ajouter l'info si c'est le message de l'utilisateur et les données du sender
-        $messages->transform(function ($message) use ($user, $canSeeIdentity) {
+        // Transformer les messages pour gérer l'anonymat
+        $messages->getCollection()->transform(function ($message) use ($user, $canSeeIdentity) {
             $message->is_own = $message->sender_id === $user->id;
 
             // L'avatar est toujours visible, mais le nom dépend du statut Premium
@@ -419,57 +419,33 @@ class GroupController extends Controller
 
                 // Nom visible seulement si Premium
                 if ($canSeeIdentity) {
+                    // Premium : Données réelles
                     $message->sender_first_name = $message->sender->first_name;
                     $message->sender_last_name = $message->sender->last_name;
                     $message->sender_username = $message->sender->username;
                     $message->sender_is_premium = $message->sender->is_premium ?? false;
                     $message->sender_is_verified = $message->sender->is_verified ?? false;
-
-                    // Remplacer la relation sender par un objet simple
-                    $message->setRelation('sender', [
-                        'id' => $message->sender->id,
-                        'first_name' => $message->sender->first_name,
-                        'last_name' => $message->sender->last_name,
-                        'username' => $message->sender->username,
-                        'avatar_url' => $message->sender->avatar_url,
-                        'is_premium' => $message->sender->is_premium ?? false,
-                        'is_verified' => $message->sender->is_verified ?? false,
-                    ]);
                 } else {
-                    // Pas Premium : Anonyme pour le nom mais avatar visible
-                    $message->sender_name = 'Anonyme';
-                    // Toujours envoyer l'avatar même si anonyme
-                    $message->setRelation('sender', [
-                        'id' => $message->sender->id,
-                        'first_name' => 'Anonyme',
-                        'last_name' => '',
-                        'username' => 'anonyme',
-                        'avatar_url' => $message->sender->avatar_url, // Avatar toujours visible
-                        'is_premium' => false,
-                        'is_verified' => false,
-                    ]);
+                    // Pas Premium : Anonyme
+                    $message->sender_first_name = 'Anonyme';
+                    $message->sender_last_name = '';
+                    $message->sender_username = $message->sender->username; // Vrai username pour initiales
+                    $message->sender_is_premium = false;
+                    $message->sender_is_verified = false;
                 }
             }
 
             return $message;
         });
 
-        // Déterminer s'il y a plus de messages à charger
-        $hasMore = false;
-        if ($messages->count() > 0) {
-            $oldestMessageId = $messages->first()->id;
-            $hasMore = $group->messages()
-                ->where('id', '<', $oldestMessageId)
-                ->exists();
-        }
-
         return response()->json([
-            'messages' => $messages,
+            'messages' => $messages->items(), // Récupérer les items de la pagination
             'meta' => [
-                'count' => $messages->count(),
-                'has_more' => $hasMore,
-                'oldest_message_id' => $messages->count() > 0 ? $messages->first()->id : null,
-                'oldest_message_timestamp' => $messages->count() > 0 ? $messages->first()->created_at->toIso8601String() : null,
+                'current_page' => (int) $currentPage,
+                'last_page' => (int) $lastPage,
+                'per_page' => (int) $perPage,
+                'total' => (int) $totalMessages,
+                'has_more_pages' => $currentPage < $lastPage,
             ],
         ]);
     }
@@ -484,6 +460,13 @@ class GroupController extends Controller
         if (!$group->hasMember($user)) {
             return response()->json([
                 'message' => 'Accès non autorisé.',
+            ], 403);
+        }
+
+        // Vérifier si l'utilisateur a le droit de poster
+        if (!$group->canPost($user)) {
+            return response()->json([
+                'message' => 'Seuls les administrateurs peuvent poster des messages dans ce groupe.',
             ], 403);
         }
 
@@ -664,17 +647,28 @@ class GroupController extends Controller
         $message->sender_avatar_url = $user->avatar_url; // Avatar toujours visible
         $message->sender_initial = $user->initial;
 
+        // Charger la relation sender avec l'utilisateur actuel
+        $message->load('sender');
+
         $canSeeIdentity = $user->has_active_premium ?? false;
         if ($canSeeIdentity) {
             // Premium : Envoyer le vrai nom + avatar
             $message->sender_first_name = $user->first_name;
             $message->sender_last_name = $user->last_name;
             $message->sender_username = $user->username;
+            $message->sender_avatar_url = $user->avatar_url;
+            $message->sender_initial = $user->initial;
             $message->sender_is_premium = $user->is_premium ?? false;
             $message->sender_is_verified = $user->is_verified ?? false;
         } else {
-            // Pas Premium : Anonyme pour le nom, mais avatar visible
-            $message->sender_name = 'Anonyme';
+            // Pas Premium : Anonyme pour le nom, mais avatar et initiales visibles
+            $message->sender_first_name = 'Anonyme';
+            $message->sender_last_name = '';
+            $message->sender_username = $user->username; // Vrai username pour initiales
+            $message->sender_avatar_url = $user->avatar_url;
+            $message->sender_initial = $user->initial; // Initiales visibles
+            $message->sender_is_premium = false;
+            $message->sender_is_verified = false;
         }
 
         // Diffuser l'événement en temps réel
@@ -800,7 +794,7 @@ class GroupController extends Controller
                 ];
 
                 if ($member->user) {
-                    // Avatar toujours visible
+                    // Avatar et initiales toujours visibles
                     $memberData['avatar_url'] = $member->user->avatar_url;
                     $memberData['initial'] = $member->user->initial;
 
@@ -812,7 +806,10 @@ class GroupController extends Controller
                         $memberData['is_premium'] = $member->user->is_premium ?? false;
                         $memberData['is_verified'] = $member->user->is_verified ?? false;
                     } else {
-                        // Pas Premium : Anonyme pour le nom, mais avatar visible
+                        // Pas Premium : Anonyme pour le nom, mais avatar et initiales visibles
+                        $memberData['first_name'] = 'Anonyme';
+                        $memberData['last_name'] = '';
+                        $memberData['username'] = $member->user->username; // Envoyer le vrai username
                         $memberData['display_name'] = 'Anonyme';
                     }
                 }
@@ -1004,6 +1001,40 @@ class GroupController extends Controller
 
         return response()->json([
             'total_unread_count' => $totalUnreadCount,
+        ]);
+    }
+
+    /**
+     * Mettre à jour les permissions de publication (créateur/admin uniquement)
+     */
+    public function updatePostingPermission(Request $request, Group $group): JsonResponse
+    {
+        $user = $request->user();
+
+        // Seul le créateur ou un admin peut modifier les permissions
+        if (!$group->isCreator($user) && !$group->isAdmin($user)) {
+            return response()->json([
+                'message' => 'Accès non autorisé.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'posting_permission' => ['required', Rule::in([
+                Group::POSTING_PERMISSION_EVERYONE,
+                Group::POSTING_PERMISSION_ADMINS_ONLY,
+            ])],
+        ]);
+
+        $group->update(['posting_permission' => $validated['posting_permission']]);
+
+        // Rafraîchir le groupe et ajouter les flags
+        $group = $group->fresh();
+        $group->is_creator = $group->isCreator($user);
+        $group->is_admin = $group->isAdmin($user);
+
+        return response()->json([
+            'message' => 'Permissions de publication mises à jour avec succès.',
+            'group' => $group,
         ]);
     }
 

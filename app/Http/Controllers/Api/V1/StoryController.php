@@ -420,6 +420,7 @@ class StoryController extends Controller
                 'full_name' => $viewer->full_name,
                 'avatar_url' => $viewer->avatar_url,
                 'viewed_at' => $viewer->pivot->created_at->toIso8601String(),
+                'has_liked' => $story->isLikedBy($viewer),
             ]),
             'total_views' => $story->views_count,
         ]);
@@ -441,6 +442,49 @@ class StoryController extends Controller
             'active_stories' => $activeStories,
             'expired_stories' => $totalStories - $activeStories,
             'total_views' => $totalViews,
+        ]);
+    }
+
+    /**
+     * Liker une story
+     */
+    public function like(Request $request, Story $story): JsonResponse
+    {
+        $user = $request->user();
+
+        // Vérifier que la story est active
+        if ($story->is_expired) {
+            return response()->json([
+                'message' => 'Cette story a expiré.',
+            ], 404);
+        }
+
+        // Vérifier que ce n'est pas sa propre story
+        if ($story->user_id === $user->id) {
+            return response()->json([
+                'message' => 'Vous ne pouvez pas liker votre propre story.',
+            ], 422);
+        }
+
+        // Liker la story
+        $liked = $story->likeBy($user);
+
+        if (!$liked) {
+            return response()->json([
+                'message' => 'Vous avez déjà liké cette story.',
+            ], 422);
+        }
+
+        // Envoyer une notification FCM au créateur de la story
+        try {
+            $notificationService = app(NotificationService::class);
+            $notificationService->sendStoryLikeNotification($story);
+        } catch (\Exception $e) {
+            \Log::warning('Story like notification failed: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'message' => 'Story likée avec succès.',
         ]);
     }
 

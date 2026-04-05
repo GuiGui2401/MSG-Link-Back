@@ -79,6 +79,10 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     protected $appends = [
         'has_active_premium',
+        'avatar_url',
+        'initial',
+        'full_name',
+        'cover_photo_url',
     ];
 
     /**
@@ -107,11 +111,33 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Initiale de l'utilisateur (pour affichage anonyme)
+     * Initiales de l'utilisateur (pour affichage anonyme)
+     * Retourne 2 lettres : première lettre du prénom + première lettre du nom
+     * Ou les 2 premières lettres du prénom si pas de nom
      */
     public function getInitialAttribute(): string
     {
-        return strtoupper(substr($this->first_name, 0, 1));
+        // Si on a prénom et nom, retourner les initiales
+        if (!empty($this->first_name) && !empty($this->last_name)) {
+            return strtoupper(substr($this->first_name, 0, 1) . substr($this->last_name, 0, 1));
+        }
+
+        // Si on a juste le prénom, prendre les 2 premières lettres
+        if (!empty($this->first_name)) {
+            return strlen($this->first_name) >= 2
+                ? strtoupper(substr($this->first_name, 0, 2))
+                : strtoupper($this->first_name[0]);
+        }
+
+        // Si on a le username, prendre les 2 premières lettres
+        if (!empty($this->username)) {
+            return strlen($this->username) >= 2
+                ? strtoupper(substr($this->username, 0, 2))
+                : strtoupper($this->username[0]);
+        }
+
+        // Par défaut
+        return 'A';
     }
 
     /**

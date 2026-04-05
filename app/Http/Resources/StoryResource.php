@@ -46,6 +46,7 @@ class StoryResource extends JsonResource
             'created_at' => $this->created_at->toIso8601String(),
             // Informations supplémentaires si demandées
             'is_viewed' => $this->when(isset($this->is_viewed), $this->is_viewed),
+            'is_liked' => $user ? $this->isLikedBy($user) : false,
             'viewers' => $this->when($isOwner, function () use ($user) {
                 $hasViewerSubscription = PremiumSubscription::hasActiveForStoryViewers($user->id, $this->id);
 

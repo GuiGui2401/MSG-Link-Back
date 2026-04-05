@@ -493,6 +493,29 @@ class NotificationService
     }
 
     /**
+     * Notification de like sur une story
+     */
+    public function sendStoryLikeNotification(\App\Models\Story $story): void
+    {
+        $recipient = $story->user;
+
+        if (!$recipient) {
+            return;
+        }
+
+        // Notification simple sans mentionner qui a liké
+        $this->sendPushNotification(
+            $recipient,
+            'Votre story a été liké',
+            'Votre story a été liké',
+            [
+                'type' => 'story_like',
+                'story_id' => (string) $story->id,
+            ]
+        );
+    }
+
+    /**
      * Notification de réponse à une story
      */
     public function sendStoryReplyNotification(\App\Models\Story $story, \App\Models\ChatMessage $message): void
@@ -661,5 +684,32 @@ class NotificationService
         }
 
         Log::info("✅ User {$user->id} subscribed to all topics", ['topics' => $topics]);
+    }
+
+    /**
+     * Notification de vue de profil (admirateur secret)
+     */
+    public function sendProfileViewNotification(User $user): void
+    {
+        // Notification en base
+        $this->createNotification(
+            $user,
+            'profile_view',
+            'Admirateur secret 👁️',
+            "Quelqu'un a consulté votre profil !",
+            [
+                'action' => 'view_profile_visitors',
+            ]
+        );
+
+        // Notification push
+        $this->sendPushNotification(
+            $user,
+            '👁️ Admirateur secret',
+            "Quelqu'un a consulté votre profil mystérieusement !",
+            [
+                'type' => 'profile_view',
+            ]
+        );
     }
 }

@@ -22,6 +22,7 @@ class Group extends Model
         'invite_code',
         'is_public',
         'is_discoverable',
+        'posting_permission',
         'max_members',
         'members_count',
         'messages_count',
@@ -46,6 +47,9 @@ class Group extends Model
 
     const MAX_MEMBERS_DEFAULT = 50;
     const MAX_MEMBERS_PREMIUM = 200;
+
+    const POSTING_PERMISSION_EVERYONE = 'everyone';
+    const POSTING_PERMISSION_ADMINS_ONLY = 'admins_only';
 
     // ==================== RELATIONS ====================
 
@@ -187,6 +191,20 @@ class Group extends Model
             ->where('user_id', $user->id)
             ->where('role', GroupMember::ROLE_ADMIN)
             ->exists();
+    }
+
+    /**
+     * Vérifier si un utilisateur peut poster dans le groupe
+     */
+    public function canPost(User $user): bool
+    {
+        // Si le groupe autorise tout le monde à poster
+        if ($this->posting_permission === self::POSTING_PERMISSION_EVERYONE) {
+            return true;
+        }
+
+        // Si le groupe n'autorise que les admins, vérifier si l'utilisateur est admin ou créateur
+        return $this->isCreator($user) || $this->isAdmin($user);
     }
 
     /**
