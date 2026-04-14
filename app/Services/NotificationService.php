@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Log;
 use Kreait\Firebase\Factory;
 use Kreait\Firebase\Messaging\CloudMessage;
 use Kreait\Firebase\Messaging\Notification as FCMNotification;
+use Kreait\Firebase\Messaging\AndroidConfig;
+use Kreait\Firebase\Messaging\ApnsConfig;
 
 class NotificationService
 {
@@ -54,16 +56,46 @@ class NotificationService
     /**
      * Envoyer une notification push via FCM
      */
-    public function sendPushNotification(User $user, string $title, string $body, array $data = []): bool
+    public function sendPushNotification(User $user, string $title, string $body, array $data = [], ?string $imageUrl = null): bool
     {
         if (!$this->messaging || !$user->fcm_token) {
             return false;
         }
 
         try {
+            // Créer la notification de base avec image si fournie
+            $notification = $imageUrl
+                ? FCMNotification::create($title, $body)->withImageUrl($imageUrl)
+                : FCMNotification::create($title, $body);
+
             $message = CloudMessage::withTarget('token', $user->fcm_token)
-                ->withNotification(FCMNotification::create($title, $body))
+                ->withNotification($notification)
                 ->withData($data);
+
+            // Configuration Android : icône et couleur
+            $androidConfig = AndroidConfig::fromArray([
+                'priority' => 'high',
+                'notification' => [
+                    'icon' => 'ic_notification_white',  // Icône blanche XML (SANS préfixe @drawable/ pour FCM)
+                    'color' => '#FF1493',          // Couleur rose/violet (gradient de votre logo)
+                    'sound' => 'default',
+                    'channel_id' => 'weylo_notifications',  // Doit correspondre au channel créé dans l'app
+                ],
+            ]);
+
+            // Configuration iOS/APNs
+            $apnsConfig = ApnsConfig::fromArray([
+                'payload' => [
+                    'aps' => [
+                        'sound' => 'default',
+                        'badge' => 1,
+                    ],
+                ],
+            ]);
+
+            $message = $message
+                ->withAndroidConfig($androidConfig)
+                ->withApnsConfig($apnsConfig);
 
             $this->messaging->send($message);
 
@@ -90,6 +122,11 @@ class NotificationService
     {
         $recipient = $message->recipient;
 
+        // Ne pas envoyer de notification si l'utilisateur s'envoie un message à lui-même
+        if ($message->sender_id === $message->recipient_id) {
+            return;
+        }
+
         // Notification en base
         $this->createNotification(
             $recipient,
@@ -105,7 +142,7 @@ class NotificationService
         // Notification push
         $this->sendPushNotification(
             $recipient,
-            '📩 Nouveau message anonyme',
+            'Nouveau message anonyme',
             "Quelqu'un vous a envoyé un message.",
             [
                 'type' => 'new_message',
@@ -125,6 +162,11 @@ class NotificationService
 
         $recipient = $confession->recipient;
 
+        // Ne pas envoyer de notification si l'utilisateur s'envoie une confession à lui-même
+        if ($confession->author_id === $confession->recipient_id) {
+            return;
+        }
+
         $this->createNotification(
             $recipient,
             'new_confession',
@@ -138,7 +180,7 @@ class NotificationService
 
         $this->sendPushNotification(
             $recipient,
-            '💬 Nouvelle confession',
+            'Nouvelle confession',
             "Quelqu'un vous a fait une confession anonyme.",
             [
                 'type' => 'new_confession',
@@ -155,6 +197,11 @@ class NotificationService
         $conversation = $message->conversation;
         $recipient = $conversation->getOtherParticipant($message->sender);
 
+        // Ne pas envoyer de notification si l'utilisateur s'envoie un message à lui-même (sécurité)
+        if ($message->sender_id === $recipient->id) {
+            return;
+        }
+
         // Toujours rester mystérieux pour garder l'anonymat
         $this->createNotification(
             $recipient,
@@ -170,7 +217,7 @@ class NotificationService
 
         $this->sendPushNotification(
             $recipient,
-            '💬 Nouveau message',
+            'Nouveau message',
             "Quelqu'un vous a envoyé un message.",
             [
                 'type' => 'new_chat_message',
@@ -187,10 +234,15 @@ class NotificationService
         $recipient = $transaction->recipient;
         $gift = $transaction->gift;
 
+        // Ne pas envoyer de notification si l'utilisateur s'envoie un cadeau à lui-même
+        if ($transaction->sender_id === $transaction->recipient_id) {
+            return;
+        }
+
         $this->createNotification(
             $recipient,
             'gift_received',
-            'Cadeau reçu ! 🎁',
+            'Cadeau reçu !',
             "Vous avez reçu un cadeau : {$gift->name} ({$transaction->formatted_amount})",
             [
                 'transaction_id' => $transaction->id,
@@ -202,7 +254,7 @@ class NotificationService
 
         $this->sendPushNotification(
             $recipient,
-            '🎁 Cadeau reçu !',
+            'Cadeau reçu !',
             "Vous avez reçu un {$gift->name} !", 
             [
                 'type' => 'gift_received',
@@ -221,7 +273,7 @@ class NotificationService
         $this->createNotification(
             $user,
             'withdrawal_processed',
-            'Retrait effectué ✅',
+            'Retrait effectué',
             "Votre retrait de {$withdrawal->formatted_net_amount} a été effectué avec succès.",
             [
                 'withdrawal_id' => $withdrawal->id,
@@ -232,7 +284,7 @@ class NotificationService
 
         $this->sendPushNotification(
             $user,
-            '✅ Retrait effectué',
+            'Retrait effectué',
             "Votre retrait de {$withdrawal->formatted_net_amount} est en cours.",
             [
                 'type' => 'withdrawal_processed',
@@ -251,7 +303,7 @@ class NotificationService
         $this->createNotification(
             $user,
             'withdrawal_rejected',
-            'Retrait refusé ❌',
+            'Retrait refusé',
             "Votre demande de retrait de {$withdrawal->formatted_amount} a été refusée. Raison: {$withdrawal->rejection_reason}",
             [
                 'withdrawal_id' => $withdrawal->id,
@@ -262,7 +314,7 @@ class NotificationService
 
         $this->sendPushNotification(
             $user,
-            '❌ Retrait refusé',
+            'Retrait refusé',
             "Votre demande de retrait a été refusée.",
             [
                 'type' => 'withdrawal_rejected',
@@ -283,7 +335,7 @@ class NotificationService
         $this->createNotification(
             $user,
             'withdrawal_failed',
-            'Retrait échoué ❌',
+            'Retrait échoué',
             "Votre retrait de {$withdrawal->formatted_amount} a échoué. Raison: {$reason}",
             [
                 'withdrawal_id' => $withdrawal->id,
@@ -294,7 +346,7 @@ class NotificationService
 
         $this->sendPushNotification(
             $user,
-            '❌ Retrait échoué',
+            'Retrait échoué',
             "Votre retrait a échoué. Veuillez réessayer.",
             [
                 'type' => 'withdrawal_failed',
@@ -315,7 +367,7 @@ class NotificationService
         $this->createNotification(
             $user,
             'deposit_completed',
-            'Dépôt réussi ✅',
+            'Dépôt réussi',
             "Votre dépôt de {$formattedAmount} a été effectué avec succès.",
             [
                 'transaction_id' => $transaction->id,
@@ -326,7 +378,7 @@ class NotificationService
 
         $this->sendPushNotification(
             $user,
-            '✅ Dépôt réussi',
+            'Dépôt réussi',
             "Votre compte a été crédité de {$formattedAmount}",
             [
                 'type' => 'deposit_completed',
@@ -348,7 +400,7 @@ class NotificationService
         $this->createNotification(
             $user,
             'deposit_failed',
-            'Dépôt échoué ❌',
+            'Dépôt échoué',
             "Votre dépôt de {$formattedAmount} a échoué. Raison: {$failureReason}",
             [
                 'transaction_id' => $transaction->id,
@@ -360,7 +412,7 @@ class NotificationService
 
         $this->sendPushNotification(
             $user,
-            '❌ Dépôt échoué',
+            'Dépôt échoué',
             "Votre dépôt de {$formattedAmount} a échoué.",
             [
                 'type' => 'deposit_failed',
@@ -377,7 +429,7 @@ class NotificationService
         $this->createNotification(
             $user,
             'subscription_expiring',
-            'Abonnement expirant ⏰',
+            'Abonnement expirant',
             "Votre abonnement premium expire dans {$daysRemaining} jour(s).",
             [
                 'days_remaining' => $daysRemaining,
@@ -387,7 +439,7 @@ class NotificationService
 
         $this->sendPushNotification(
             $user,
-            '⏰ Abonnement expirant',
+            'Abonnement expirant',
             "Votre abonnement premium expire dans {$daysRemaining} jour(s).",
             [
                 'type' => 'subscription_expiring',
@@ -404,7 +456,7 @@ class NotificationService
         $this->createNotification(
             $user,
             'welcome',
-            'Bienvenue sur Weylo ! 🎉',
+            'Bienvenue sur Weylo !',
             "Bonjour {$user->first_name} ! Découvrez toutes les fonctionnalités de Weylo : messages anonymes, confessions, stories et plus encore !",
             [
                 'action' => 'explore_app',
@@ -414,7 +466,7 @@ class NotificationService
         // Notification push
         $this->sendPushNotification(
             $user,
-            '🎉 Bienvenue sur Weylo !',
+            'Bienvenue sur Weylo !',
             "Bonjour {$user->first_name} ! Découvrez toutes les fonctionnalités de l'application.",
             [
                 'type' => 'welcome',
@@ -425,16 +477,46 @@ class NotificationService
     /**
      * Envoyer une notification push par topic
      */
-    public function sendTopicNotification(string $topic, string $title, string $body, array $data = []): bool
+    public function sendTopicNotification(string $topic, string $title, string $body, array $data = [], ?string $imageUrl = null): bool
     {
         if (!$this->messaging) {
             return false;
         }
 
         try {
+            // Créer la notification de base avec image si fournie
+            $notification = $imageUrl
+                ? FCMNotification::create($title, $body)->withImageUrl($imageUrl)
+                : FCMNotification::create($title, $body);
+
             $message = CloudMessage::withTarget('topic', $topic)
-                ->withNotification(FCMNotification::create($title, $body))
+                ->withNotification($notification)
                 ->withData($data);
+
+            // Configuration Android : icône et couleur
+            $androidConfig = AndroidConfig::fromArray([
+                'priority' => 'high',
+                'notification' => [
+                    'icon' => 'ic_notification_white',  // Icône blanche XML (SANS préfixe @drawable/ pour FCM)
+                    'color' => '#FF1493',          // Couleur rose/violet (gradient de votre logo)
+                    'sound' => 'default',
+                    'channel_id' => 'weylo_notifications',  // Doit correspondre au channel créé dans l'app
+                ],
+            ]);
+
+            // Configuration iOS/APNs
+            $apnsConfig = ApnsConfig::fromArray([
+                'payload' => [
+                    'aps' => [
+                        'sound' => 'default',
+                        'badge' => 1,
+                    ],
+                ],
+            ]);
+
+            $message = $message
+                ->withAndroidConfig($androidConfig)
+                ->withApnsConfig($apnsConfig);
 
             $this->messaging->send($message);
 
@@ -465,7 +547,7 @@ class NotificationService
 
         $this->sendTopicNotification(
             'new_confessions',
-            '💬 Nouvelle confession publique',
+            'Nouvelle confession publique',
             "Une nouvelle confession est disponible !",
             [
                 'type' => 'new_public_confession',
@@ -482,7 +564,7 @@ class NotificationService
         // Toujours rester mystérieux pour créer du suspense
         $this->sendTopicNotification(
             'new_stories',
-            '📸 Nouvelle story !',
+            'Nouvelle story !',
             "Quelqu'un a publié une nouvelle story mystérieuse !",
             [
                 'type' => 'new_story',
@@ -526,6 +608,11 @@ class NotificationService
             return;
         }
 
+        // Ne pas envoyer de notification si l'utilisateur répond à sa propre story
+        if ($message->sender_id === $story->user_id) {
+            return;
+        }
+
         // Toujours rester mystérieux
         $this->createNotification(
             $recipient,
@@ -542,7 +629,7 @@ class NotificationService
 
         $this->sendPushNotification(
             $recipient,
-            '💬 Réponse à votre story',
+            'Réponse à votre story',
             "Quelqu'un a répondu à votre story mystérieuse !",
             [
                 'type' => 'story_reply',
@@ -567,7 +654,7 @@ class NotificationService
             $parentComment = \App\Models\ConfessionComment::find($comment->parent_id);
             if ($parentComment && $parentComment->author_id !== $comment->author_id) {
                 $recipient = $parentComment->author;
-                $notificationTitle = '💬 Réponse à votre commentaire';
+                $notificationTitle = 'Réponse à votre commentaire';
                 $notificationBody = "Quelqu'un a répondu à votre commentaire !";
             }
         } else {
@@ -575,7 +662,7 @@ class NotificationService
             // Notifier l'auteur de la confession seulement si ce n'est pas lui qui commente
             if ($confession->author_id && $confession->author_id !== $comment->author_id) {
                 $recipient = $confession->author;
-                $notificationTitle = '💬 Nouveau commentaire';
+                $notificationTitle = 'Nouveau commentaire';
                 $notificationBody = "Quelqu'un a commenté votre confession !";
             }
         }
@@ -695,7 +782,7 @@ class NotificationService
         $this->createNotification(
             $user,
             'profile_view',
-            'Admirateur secret 👁️',
+            'Admirateur secret',
             "Quelqu'un a consulté votre profil !",
             [
                 'action' => 'view_profile_visitors',
@@ -705,7 +792,7 @@ class NotificationService
         // Notification push
         $this->sendPushNotification(
             $user,
-            '👁️ Admirateur secret',
+            'Admirateur secret',
             "Quelqu'un a consulté votre profil mystérieusement !",
             [
                 'type' => 'profile_view',
